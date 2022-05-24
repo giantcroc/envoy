@@ -4,7 +4,7 @@
 
 #include "envoy/buffer/buffer.h"
 
-#include "zstd.h"
+#include <zstd.h>
 
 namespace Envoy {
 namespace Extensions {

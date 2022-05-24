@@ -7,7 +7,7 @@
 
 #include "source/common/config/datasource.h"
 
-#include "zstd.h"
+#include <zstd.h>
 
 namespace Envoy {
 namespace Extensions {

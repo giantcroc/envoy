@@ -209,7 +209,7 @@ def envoy_dependencies(skip_targets = []):
     _com_github_zlib_ng_zlib_ng()
     _org_boost()
     _org_brotli()
-    _com_github_facebook_zstd()
+    #_com_github_facebook_zstd()
     _re2()
     _upb()
     _proxy_wasm_cpp_sdk()
