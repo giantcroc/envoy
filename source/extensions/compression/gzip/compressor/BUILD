@@ -13,12 +13,13 @@ envoy_cc_library(
     name = "compressor_lib",
     srcs = ["zlib_compressor_impl.cc"],
     hdrs = ["zlib_compressor_impl.h"],
-    external_deps = ["zlib"],
+    #external_deps = ["zlib"],
     deps = [
         "//envoy/compression/compressor:compressor_interface",
         "//source/common/buffer:buffer_lib",
         "//source/common/common:assert_lib",
         "//source/extensions/compression/gzip/common:zlib_base_lib",
+        "@isa_l//:lib",
     ],
 )
 

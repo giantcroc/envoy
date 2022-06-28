@@ -239,7 +239,7 @@ static void compressFull(benchmark::State& state) {
     compressWith(std::move(chunks), params, decoder_callbacks, state);
   }
 }
-BENCHMARK(compressFull)->DenseRange(0, 8, 1)->UseManualTime()->Unit(benchmark::kMillisecond);
+BENCHMARK(compressFull)->DenseRange(0, 8, 3)->UseManualTime()->Unit(benchmark::kMillisecond);
 
 static void compressChunks16384(benchmark::State& state) {
   NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
@@ -251,7 +251,7 @@ static void compressChunks16384(benchmark::State& state) {
     compressWith(std::move(chunks), params, decoder_callbacks, state);
   }
 }
-BENCHMARK(compressChunks16384)->DenseRange(0, 8, 1)->UseManualTime()->Unit(benchmark::kMillisecond);
+BENCHMARK(compressChunks16384)->DenseRange(0, 8, 3)->UseManualTime()->Unit(benchmark::kMillisecond);
 
 static void compressChunks8192(benchmark::State& state) {
   NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
@@ -263,7 +263,7 @@ static void compressChunks8192(benchmark::State& state) {
     compressWith(std::move(chunks), params, decoder_callbacks, state);
   }
 }
-BENCHMARK(compressChunks8192)->DenseRange(0, 8, 1)->UseManualTime()->Unit(benchmark::kMillisecond);
+BENCHMARK(compressChunks8192)->DenseRange(0, 8, 3)->UseManualTime()->Unit(benchmark::kMillisecond);
 
 static void compressChunks4096(benchmark::State& state) {
   NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
@@ -275,7 +275,7 @@ static void compressChunks4096(benchmark::State& state) {
     compressWith(std::move(chunks), params, decoder_callbacks, state);
   }
 }
-BENCHMARK(compressChunks4096)->DenseRange(0, 8, 1)->UseManualTime()->Unit(benchmark::kMillisecond);
+BENCHMARK(compressChunks4096)->DenseRange(0, 8, 3)->UseManualTime()->Unit(benchmark::kMillisecond);
 
 static void compressChunks1024(benchmark::State& state) {
   NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
@@ -287,7 +287,7 @@ static void compressChunks1024(benchmark::State& state) {
     compressWith(std::move(chunks), params, decoder_callbacks, state);
   }
 }
-BENCHMARK(compressChunks1024)->DenseRange(0, 8, 1)->UseManualTime()->Unit(benchmark::kMillisecond);
+BENCHMARK(compressChunks1024)->DenseRange(0, 8, 3)->UseManualTime()->Unit(benchmark::kMillisecond);
 
 } // namespace Compressor
 } // namespace HttpFilters

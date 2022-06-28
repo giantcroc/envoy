@@ -3,11 +3,11 @@
 namespace Envoy {
 namespace Zlib {
 
-Base::Base(uint64_t chunk_size, std::function<void(z_stream*)> zstream_deleter)
+Base::Base(uint64_t chunk_size, std::function<void(isal_zstream*)> zstream_deleter)
     : chunk_size_{chunk_size}, chunk_char_ptr_(new unsigned char[chunk_size]),
-      zstream_ptr_(new z_stream(), zstream_deleter) {}
+      zstream_ptr_(new isal_zstream(), zstream_deleter) {}
 
-uint64_t Base::checksum() { return zstream_ptr_->adler; }
+uint64_t Base::checksum() { return zstream_ptr_->internal_state.crc; }
 
 void Base::updateOutput(Buffer::Instance& output_buffer) {
   const uint64_t n_output = chunk_size_ - zstream_ptr_->avail_out;

@@ -4,7 +4,7 @@
 
 #include "envoy/buffer/buffer.h"
 
-#include "zlib.h"
+#include <isa-l/igzip_lib.h>
 
 namespace Envoy {
 namespace Zlib {
@@ -15,7 +15,7 @@ namespace Zlib {
 // TODO(junr03): move to extensions tree once the compressor side is moved to extensions.
 class Base {
 public:
-  Base(uint64_t chunk_size, std::function<void(z_stream*)> zstream_deleter);
+  Base(uint64_t chunk_size, std::function<void(isal_zstream*)> zstream_deleter);
 
   /**
    * It returns the checksum of all output produced so far. Compressor's checksum at the end of
@@ -34,7 +34,7 @@ protected:
   bool initialized_{false};
 
   const std::unique_ptr<unsigned char[]> chunk_char_ptr_;
-  const std::unique_ptr<z_stream, std::function<void(z_stream*)>> zstream_ptr_;
+  const std::unique_ptr<isal_zstream, std::function<void(isal_zstream*)>> zstream_ptr_;
 };
 
 } // namespace Zlib

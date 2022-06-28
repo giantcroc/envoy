@@ -5,6 +5,7 @@
 #include "source/extensions/compression/gzip/common/base.h"
 
 #include "zlib.h"
+#include <isa-l/igzip_lib.h>
 
 namespace Envoy {
 namespace Extensions {
@@ -39,18 +40,18 @@ public:
    * manual.
    */
   enum class CompressionLevel : int64_t {
-    Best = Z_BEST_COMPRESSION,
+    Best = 3,
     Level1 = 1,
     Level2 = 2,
     Level3 = 3,
-    Level4 = 4,
-    Level5 = 5,
-    Level6 = 6,
-    Level7 = 7,
-    Level8 = 8,
-    Level9 = 9,
-    Speed = Z_BEST_SPEED,
-    Standard = Z_DEFAULT_COMPRESSION,
+    Level4 = 3,
+    Level5 = 3,
+    Level6 = 3,
+    Level7 = 3,
+    Level8 = 3,
+    Level9 = 3,
+    Speed = 1,
+    Standard = 2,
   };
 
   /**
