@@ -200,6 +200,8 @@ def envoy_dependencies(skip_targets = []):
     _net_colm_open_source_ragel()
     _net_zlib()
     _com_github_zlib_ng_zlib_ng()
+    _com_github_intel_isa_l()
+    _com_github_netwide_assembler_nasm()
     _org_boost()
     _org_brotli()
     _re2()
@@ -421,6 +423,30 @@ def _com_github_zlib_ng_zlib_ng():
         patches = ["@envoy//bazel/foreign_cc:zlib_ng.patch"],
     )
 
+def _com_github_intel_isa_l():
+    external_http_archive(
+        name = "com_github_intel_isa_l",
+        build_file_content = BUILD_ALL_CONTENT,
+    )
+
+    native.bind(
+        name = "isa_l",
+        actual = "@envoy//bazel/foreign_cc:isa",
+    )
+
+def _com_github_netwide_assembler_nasm():
+    external_http_archive(
+        name = "com_github_netwide_assembler_nasm",
+        build_file_content = BUILD_ALL_CONTENT,
+        patches = ["@envoy//bazel/foreign_cc:nasm.patch"],
+        patch_args = ["-p1"],
+        patch_cmds = ["chmod u+x build.py"],
+    )
+
+    native.bind(
+        name = "nasm",
+        actual = "@envoy//bazel/foreign_cc:nasm",
+    )
 # Boost in general is not approved for Envoy use, and the header-only
 # dependency is only for the Hyperscan contrib package.
 def _org_boost():

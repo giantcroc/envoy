@@ -115,6 +115,22 @@ configure_make(
     tags = ["skip_on_windows"],
 )
 
+configure_make(
+    name = "nasm",
+    configure_options = ["CFLAGS='-Dredacted=\"redacted\"'"],
+    lib_source = "@com_github_netwide_assembler_nasm//:all",
+    configure_in_place = True,
+    autogen = True,
+)
+
+configure_make(
+    name = "isa_l",
+    lib_source = "@com_github_intel_isa_l//:all",
+    configure_in_place = True,
+    autogen = True,
+    deps = [":nasm"],
+)
+
 envoy_cmake(
     name = "libsxg",
     cache_entries = {

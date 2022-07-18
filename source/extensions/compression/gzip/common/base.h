@@ -5,6 +5,7 @@
 #include "envoy/buffer/buffer.h"
 
 #include "zlib.h"
+#include "igzip_lib.h"
 
 namespace Envoy {
 namespace Zlib {
