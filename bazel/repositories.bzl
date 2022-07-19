@@ -438,14 +438,14 @@ def _com_github_netwide_assembler_nasm():
     external_http_archive(
         name = "com_github_netwide_assembler_nasm",
         build_file_content = BUILD_ALL_CONTENT,
-        patches = ["@envoy//bazel/foreign_cc:nasm.patch"],
-        patch_args = ["-p1"],
-        patch_cmds = ["chmod u+x build.py"],
+        # patches = ["@envoy//bazel/foreign_cc:nasm.patch"],
+        # patch_args = ["-p1"],
+        # patch_cmds = ["chmod u+x build.py"],
     )
 
     native.bind(
-        name = "nasm",
-        actual = "@envoy//bazel/foreign_cc:nasm",
+        name = "libnasm",
+        actual = "@envoy//bazel/foreign_cc:libnasm",
     )
 # Boost in general is not approved for Envoy use, and the header-only
 # dependency is only for the Hyperscan contrib package.

@@ -85,7 +85,9 @@ configure_make(
     }),
     targets = [],
 )
-
+# +    os.system('./autogen.sh')
+# +    os.system('./configure')
+# +    os.system('ls -l')
 configure_make(
     name = "moonjit",
     configure_command = "build.py",
@@ -116,19 +118,27 @@ configure_make(
 )
 
 configure_make(
-    name = "nasm",
+    name = "libnasm",
+    # configure_command = "build.py",
     configure_options = ["CFLAGS='-Dredacted=\"redacted\"'"],
+    env = {
+        "CXXFLAGS": "-lstdc++ -Wno-unused-command-line-argument",
+    },
     lib_source = "@com_github_netwide_assembler_nasm//:all",
+    # out_static_libs = ["libnasm.a"],
+    out_binaries = ["nasm"],
     configure_in_place = True,
     autogen = True,
+    # targets =["everything"],
 )
 
 configure_make(
     name = "isa_l",
     lib_source = "@com_github_intel_isa_l//:all",
+    out_static_libs = ["libisal.a"],
     configure_in_place = True,
     autogen = True,
-    deps = [":nasm"],
+    deps = [":libnasm"],
 )
 
 envoy_cmake(
