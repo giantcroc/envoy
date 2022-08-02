@@ -26,27 +26,27 @@ CONTRIB_EXTENSIONS = {
     # Sip proxy
     #
 
-    "envoy.filters.network.sip_proxy":                          "//contrib/sip_proxy/filters/network/source:config",
-    "envoy.filters.sip.router":                                 "//contrib/sip_proxy/filters/network/source/router:config",
+    #"envoy.filters.network.sip_proxy":                          "//contrib/sip_proxy/filters/network/source:config",
+    # "envoy.filters.sip.router":                                 "//contrib/sip_proxy/filters/network/source/router:config",
 
     #
     # Private key providers
     #
 
-    "envoy.tls.key_providers.cryptomb":                         "//contrib/cryptomb/private_key_providers/source:config",
-    "envoy.tls.key_providers.qat":                              "//contrib/qat/private_key_providers/source:config",
+    # "envoy.tls.key_providers.cryptomb":                         "//contrib/cryptomb/private_key_providers/source:config",
+    # "envoy.tls.key_providers.qat":                              "//contrib/qat/private_key_providers/source:config",
 
     #
     # Socket interface extensions
     #
 
-    "envoy.bootstrap.vcl":                                      "//contrib/vcl/source:config",
+    # "envoy.bootstrap.vcl":                                      "//contrib/vcl/source:config",
 
     #
     # Input matchers
     #
 
-    "envoy.matching.input_matchers.hyperscan":                  "//contrib/hyperscan/matching/input_matchers/source:config",
+    # "envoy.matching.input_matchers.hyperscan":                  "//contrib/hyperscan/matching/input_matchers/source:config",
 
     #
     # Connection Balance extensions
@@ -71,4 +71,8 @@ CONTRIB_EXTENSIONS = {
     #
 
     "envoy.xds_delegates.kv_store":                            "//contrib/config/source:kv_store_xds_delegate",
+    # Compression extensions
+    #
+
+    "envoy.compression.compressor.igzip":                     "//contrib/isa_l/compression/source/compressor:config",
 }
