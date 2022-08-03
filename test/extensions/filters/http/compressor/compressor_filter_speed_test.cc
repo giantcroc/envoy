@@ -3,6 +3,7 @@
 
 #include "source/extensions/compression/gzip/compressor/zlib_compressor_impl.h"
 #include "source/extensions/compression/zstd/compressor/zstd_compressor_impl.h"
+#include "contrib/isa_l/compression/source/compressor/igzip_compressor_impl.h"
 #include "source/extensions/filters/http/compressor/compressor_filter.h"
 
 #include "test/mocks/http/mocks.h"
@@ -71,6 +72,32 @@ private:
   const uint64_t chunk_size_{4096};
 };
 
+class MockIgzipCompressorFactory : public Envoy::Compression::Compressor::CompressorFactory {
+public:
+  MockIgzipCompressorFactory(
+      Compression::Igzip::Compressor::IgzipCompressorImpl::CompressionLevel level,
+      int64_t window_bits)
+      : level_(level), window_bits_(window_bits) {
+  }
+
+  Envoy::Compression::Compressor::CompressorPtr createCompressor() override {
+    auto compressor =
+        std::make_unique<Compression::Igzip::Compressor::IgzipCompressorImpl>(chunk_size_);
+    compressor->init(level_, window_bits_);
+    return compressor;
+  }
+
+  const std::string& statsPrefix() const override { CONSTRUCT_ON_FIRST_USE(std::string, "gzip."); }
+  const std::string& contentEncoding() const override {
+    return Http::CustomHeaders::get().ContentEncodingValues.Gzip;
+  }
+
+private:
+  const Compression::Igzip::Compressor::IgzipCompressorImpl::CompressionLevel level_;
+  const int64_t window_bits_;
+  const uint64_t chunk_size_{4096};
+};
+
 using CompressionParams = std::tuple<int64_t, uint64_t, int64_t, uint64_t>;
 
 CompressorFilterConfigSharedPtr makeGzipConfig(Stats::IsolatedStoreImpl& stats,
@@ -105,6 +132,23 @@ CompressorFilterConfigSharedPtr makeZstdConfig(Stats::IsolatedStoreImpl& stats,
   const auto strategy = std::get<1>(params);
   Envoy::Compression::Compressor::CompressorFactoryPtr compressor_factory =
       std::make_unique<MockZstdCompressorFactory>(level, strategy);
+  CompressorFilterConfigSharedPtr config = std::make_shared<CompressorFilterConfig>(
+      compressor, "test.", stats, runtime, std::move(compressor_factory));
+
+  return config;
+}
+
+CompressorFilterConfigSharedPtr makeIgzipConfig(Stats::IsolatedStoreImpl& stats,
+                                               testing::NiceMock<Runtime::MockLoader>& runtime,
+                                               CompressionParams params) {
+
+  envoy::extensions::filters::http::compressor::v3::Compressor compressor;
+
+  const auto level = static_cast<Compression::Igzip::Compressor::IgzipCompressorImpl::CompressionLevel>(
+          std::get<0>(params));
+  const auto window_bits = std::get<2>(params);
+  Envoy::Compression::Compressor::CompressorFactoryPtr compressor_factory =
+      std::make_unique<MockIgzipCompressorFactory>(level, window_bits);
   CompressorFilterConfigSharedPtr config = std::make_shared<CompressorFilterConfig>(
       compressor, "test.", stats, runtime, std::move(compressor_factory));
 
@@ -150,7 +194,7 @@ struct Result {
   uint64_t total_compressed_bytes = 0;
 };
 
-enum class CompressorLibs { Gzip, Zstd };
+enum class CompressorLibs { Gzip, Zstd, Igzip };
 
 static Result compressWith(enum CompressorLibs lib, std::vector<Buffer::OwnedImpl>&& chunks,
                            CompressionParams params,
@@ -167,6 +211,10 @@ static Result compressWith(enum CompressorLibs lib, std::vector<Buffer::OwnedImp
   } else if (lib == CompressorLibs::Zstd) {
     config = makeZstdConfig(stats, runtime, params);
     compressor = "zstd";
+  }
+  else if(lib == CompressorLibs::Igzip){
+    config = makeIgzipConfig(stats, runtime, params);
+    compressor = "gzip";
   }
 
   ON_CALL(runtime.snapshot_, featureEnabled("test.filter_enabled", 100))
@@ -517,6 +565,96 @@ static void compressChunks1024WithZstd(benchmark::State& state) {
 }
 BENCHMARK(compressChunks1024WithZstd)
     ->DenseRange(0, 21, 1)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond);
+
+static std::vector<CompressionParams> igzip_compression_params = {
+    // Speed + Standard + Small Window + Low mem level
+    {1, Z_DEFAULT_STRATEGY, 9, 1},
+
+    // Speed + Standard + Med window + Med mem level
+    {2, Z_DEFAULT_STRATEGY, 12, 5},
+
+    // Speed + Standard + Big window + High mem level
+    {3, Z_DEFAULT_STRATEGY, 15, 9}};
+
+// NOLINTNEXTLINE(readability-identifier-naming)
+static void compressFullWithIgzip(benchmark::State& state) {
+  NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
+  const auto idx = state.range(0);
+  const auto& params = igzip_compression_params[idx];
+
+  for (auto _ : state) { // NOLINT
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(1, 122880);
+    compressWith(CompressorLibs::Igzip, std::move(chunks), params, decoder_callbacks, state);
+  }
+}
+BENCHMARK(compressFullWithIgzip)
+    ->DenseRange(0, 2, 1)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond);
+
+// NOLINTNEXTLINE(readability-identifier-naming)
+static void compressChunks16384WithIgzip(benchmark::State& state) {
+  NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
+  const auto idx = state.range(0);
+  const auto& params = igzip_compression_params[idx];
+
+  for (auto _ : state) { // NOLINT
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(7, 16384);
+    compressWith(CompressorLibs::Igzip, std::move(chunks), params, decoder_callbacks, state);
+  }
+}
+BENCHMARK(compressChunks16384WithIgzip)
+    ->DenseRange(0, 2, 1)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond);
+
+// NOLINTNEXTLINE(readability-identifier-naming)
+static void compressChunks8192WithIgzip(benchmark::State& state) {
+  NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
+  const auto idx = state.range(0);
+  const auto& params = igzip_compression_params[idx];
+
+  for (auto _ : state) { // NOLINT
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(15, 8192);
+    compressWith(CompressorLibs::Igzip, std::move(chunks), params, decoder_callbacks, state);
+  }
+}
+BENCHMARK(compressChunks8192WithIgzip)
+    ->DenseRange(0, 2, 1)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond);
+
+// NOLINTNEXTLINE(readability-identifier-naming)
+static void compressChunks4096WithIgzip(benchmark::State& state) {
+  NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
+  const auto idx = state.range(0);
+  const auto& params = igzip_compression_params[idx];
+
+  for (auto _ : state) { // NOLINT
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(30, 4096);
+    compressWith(CompressorLibs::Igzip, std::move(chunks), params, decoder_callbacks, state);
+  }
+}
+BENCHMARK(compressChunks4096WithIgzip)
+    ->DenseRange(0, 2, 1)
+    ->UseManualTime()
+    ->Unit(benchmark::kMillisecond);
+
+// NOLINTNEXTLINE(readability-identifier-naming)
+static void compressChunks1024WithIgzip(benchmark::State& state) {
+  NiceMock<Http::MockStreamDecoderFilterCallbacks> decoder_callbacks;
+  const auto idx = state.range(0);
+  const auto& params = igzip_compression_params[idx];
+
+  for (auto _ : state) { // NOLINT
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(120, 1024);
+    compressWith(CompressorLibs::Igzip, std::move(chunks), params, decoder_callbacks, state);
+  }
+}
+BENCHMARK(compressChunks1024WithIgzip)
+    ->DenseRange(0, 2, 1)
     ->UseManualTime()
     ->Unit(benchmark::kMillisecond);
 

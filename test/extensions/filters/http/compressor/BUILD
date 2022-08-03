@@ -81,6 +81,7 @@ envoy_cc_benchmark_binary(
         "//source/extensions/compression/gzip/compressor:compressor_lib",
         "//source/extensions/compression/zstd/compressor:config",
         "//source/extensions/filters/http/compressor:compressor_filter_lib",
+        "//contrib/isa_l/compression/source/compressor:igzip_compressor_lib",
         "//test/mocks/http:http_mocks",
         "//test/mocks/protobuf:protobuf_mocks",
         "//test/mocks/runtime:runtime_mocks",

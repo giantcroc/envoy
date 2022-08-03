@@ -13,7 +13,7 @@ envoy_cc_library(
     name = "igzip_compressor_lib",
     srcs = ["igzip_compressor_impl.cc"],
     hdrs = ["igzip_compressor_impl.h"],
-    external_deps = ["zlib"],
+    visibility = ["//visibility:public"],
     deps = [
         "//envoy/compression/compressor:compressor_interface",
         "//source/common/buffer:buffer_lib",
