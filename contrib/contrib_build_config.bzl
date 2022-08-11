@@ -26,27 +26,27 @@ CONTRIB_EXTENSIONS = {
     # Sip proxy
     #
 
-    #"envoy.filters.network.sip_proxy":                          "//contrib/sip_proxy/filters/network/source:config",
-    # "envoy.filters.sip.router":                                 "//contrib/sip_proxy/filters/network/source/router:config",
+    "envoy.filters.network.sip_proxy":                          "//contrib/sip_proxy/filters/network/source:config",
+    "envoy.filters.sip.router":                                 "//contrib/sip_proxy/filters/network/source/router:config",
 
     #
     # Private key providers
     #
 
-    # "envoy.tls.key_providers.cryptomb":                         "//contrib/cryptomb/private_key_providers/source:config",
-    # "envoy.tls.key_providers.qat":                              "//contrib/qat/private_key_providers/source:config",
+    "envoy.tls.key_providers.cryptomb":                         "//contrib/cryptomb/private_key_providers/source:config",
+    "envoy.tls.key_providers.qat":                              "//contrib/qat/private_key_providers/source:config",
 
     #
     # Socket interface extensions
     #
 
-    # "envoy.bootstrap.vcl":                                      "//contrib/vcl/source:config",
+    "envoy.bootstrap.vcl":                                      "//contrib/vcl/source:config",
 
     #
     # Input matchers
     #
 
-    # "envoy.matching.input_matchers.hyperscan":                  "//contrib/hyperscan/matching/input_matchers/source:config",
+    "envoy.matching.input_matchers.hyperscan":                  "//contrib/hyperscan/matching/input_matchers/source:config",
 
     #
     # Connection Balance extensions
