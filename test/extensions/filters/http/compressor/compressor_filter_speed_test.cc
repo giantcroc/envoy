@@ -13,6 +13,8 @@
 #include "benchmark/benchmark.h"
 #include "gmock/gmock.h"
 
+#include <fstream>
+
 using testing::Return;
 
 namespace Envoy {
@@ -158,7 +160,27 @@ static constexpr uint64_t TestDataSize = 122880;
 
 Buffer::OwnedImpl generateTestData() {
   Buffer::OwnedImpl data;
-  TestUtility::feedBufferWithRandomCharacters(data, TestDataSize);
+
+  std::string filename = std::to_string(TestDataSize) + ".data";
+  std::ifstream input_file(filename, std::ios::in | std::ios::binary);
+  if (!input_file) {
+    printf("Failed to find data file: %s\n" , filename.c_str());
+    TestUtility::feedBufferWithRandomCharacters(data, TestDataSize);
+
+    std::ofstream output_file(filename, std::ios::trunc);
+    if (!output_file.is_open()) {
+      printf("Error create file: %s\n" , filename.c_str());
+    }
+    output_file << data.toString();
+    output_file.close();
+  }
+  else{
+      std::stringstream buf;
+      buf << input_file.rdbuf();
+      input_file.close();
+      data.add(buf.str());
+  }
+
   return data;
 }
 
