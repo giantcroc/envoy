@@ -165,7 +165,7 @@ class UdpProxyFilter : public Network::UdpListenerReadFilter,
 public:
   UdpProxyFilter(Network::UdpReadFilterCallbacks& callbacks,
                  const UdpProxyFilterConfigSharedPtr& config);
-
+  ~UdpProxyFilter() override;
   // Network::UdpListenerReadFilter
   Network::FilterStatus onData(Network::UdpRecvData& data) override;
   Network::FilterStatus onReceiveError(Api::IoError::IoErrorCode error_code) override;
@@ -193,7 +193,7 @@ private:
   private:
     void onIdleTimer();
     void onReadReady();
-    void fillStreamInfo();
+    void fillSessStreamInfo();
 
     // Network::UdpPacketProcessor
     void processPacket(Network::Address::InstanceConstSharedPtr local_address,
@@ -379,11 +379,13 @@ private:
   // Upstream::ClusterUpdateCallbacks
   void onClusterAddOrUpdate(Upstream::ThreadLocalCluster& cluster) final;
   void onClusterRemoval(const std::string& cluster_name) override;
+  void fillProxyStreamInfo();
 
   const UdpProxyFilterConfigSharedPtr config_;
   const Upstream::ClusterUpdateCallbacksHandlePtr cluster_update_callbacks_;
   // Map for looking up cluster info with its name.
   absl::flat_hash_map<std::string, ClusterInfoPtr> cluster_infos_;
+  absl::optional<StreamInfo::StreamInfoImpl> udp_proxy_stats_;
 };
 
 } // namespace UdpProxy

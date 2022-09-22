@@ -167,7 +167,8 @@ public:
         peer_address_(std::move(peer_address)) {
     // Disable strict mock warnings.
     ON_CALL(*factory_context_.access_log_manager_.file_, write(_))
-        .WillByDefault(SaveArg<0>(&access_log_data_));
+          .WillByDefault(
+              Invoke([&](absl::string_view data) { output_.push_back(std::string(data)); }));
     ON_CALL(os_sys_calls_, supportsIpTransparent()).WillByDefault(Return(true));
     EXPECT_CALL(os_sys_calls_, supportsUdpGro()).Times(AtLeast(0)).WillRepeatedly(Return(true));
     EXPECT_CALL(callbacks_, udpListener()).Times(AtLeast(0));
@@ -314,6 +315,7 @@ use_original_src_ip: true
   std::unique_ptr<TestUdpProxyFilter> filter_;
   std::vector<TestSession> test_sessions_;
   StringViewSaver access_log_data_;
+  std::vector<std::string> output_;
   bool expect_gro_{};
   const Network::Address::InstanceConstSharedPtr upstream_address_;
   const Network::Address::InstanceConstSharedPtr peer_address_;
@@ -368,10 +370,15 @@ public:
 TEST_F(UdpProxyFilterTest, BasicFlow) {
   InSequence s;
 
-  const std::string access_log_format = "%DYNAMIC_METADATA(udp.proxy:bytes_received)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:datagrams_received)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:bytes_sent)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:datagrams_sent)%";
+  const std::string access_log_format = "%DYNAMIC_METADATA(udp.proxy.session:bytes_received)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:datagrams_received)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:bytes_sent)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:datagrams_sent)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.proxy:bytes_received)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.proxy:datagrams_received)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.proxy:bytes_sent)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.proxy:datagrams_sent)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.proxy:sess_total)%";
 
   setup(accessLogConfig(R"EOF(
 stat_prefix: foo
@@ -410,7 +417,9 @@ upstream_socket_config:
   checkTransferStats(17 /*rx_bytes*/, 3 /*rx_datagrams*/, 17 /*tx_bytes*/, 3 /*tx_datagrams*/);
 
   filter_.reset();
-  EXPECT_EQ(access_log_data_.value(), "17 3 17 3");
+  EXPECT_EQ(output_.size(), 2);
+  EXPECT_EQ(output_.front(), "- - - - 17 3 17 3 1");
+  EXPECT_EQ(output_.back(), "17 3 17 3 - - - - -");
 }
 
 // Route with source IP.
@@ -492,13 +501,13 @@ matcher:
 TEST_F(UdpProxyFilterTest, SendReceiveErrorHandling) {
   InSequence s;
 
-  const std::string access_log_format = "%DYNAMIC_METADATA(udp.proxy:cluster_name)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:bytes_sent)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:bytes_received)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:errors_sent)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:errors_received)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:datagrams_sent)% "
-                                        "%DYNAMIC_METADATA(udp.proxy:datagrams_received)%";
+  const std::string access_log_format = "%DYNAMIC_METADATA(udp.proxy.session:cluster_name)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:bytes_sent)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:bytes_received)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:errors_sent)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:errors_received)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:datagrams_sent)% "
+                                        "%DYNAMIC_METADATA(udp.proxy.session:datagrams_received)%";
 
   setup(accessLogConfig(R"EOF(
 stat_prefix: foo
@@ -550,7 +559,8 @@ matcher:
              ->value());
 
   filter_.reset();
-  EXPECT_EQ(access_log_data_.value(), "fake_cluster 0 10 1 1 0 2");
+  EXPECT_EQ(output_.size(), 2);
+  EXPECT_EQ(output_.back(), "fake_cluster 0 10 1 1 0 2");
 }
 
 // No upstream host handling.
