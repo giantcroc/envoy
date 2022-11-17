@@ -111,7 +111,7 @@ CompressorFilterConfigSharedPtr makeZstdConfig(Stats::IsolatedStoreImpl& stats,
   return config;
 }
 
-static constexpr uint64_t TestDataSize = 122880;
+static constexpr uint64_t TestDataSize = 1024*1024;
 
 Buffer::OwnedImpl generateTestData() {
   Buffer::OwnedImpl data;
