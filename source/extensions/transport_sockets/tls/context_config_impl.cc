@@ -43,7 +43,8 @@ std::vector<Secret::TlsCertificateConfigProviderSharedPtr> getTlsCertificateConf
       if (sds_secret_config.has_sds_config()) {
         // Fetch dynamic secret.
         providers.push_back(factory_context.secretManager().findOrCreateTlsCertificateProvider(
-            sds_secret_config.sds_config(), sds_secret_config.name(), factory_context));
+            sds_secret_config.sds_config(), sds_secret_config.name(), factory_context,
+            factory_context.initManager()));
       } else {
         // Load static secret.
         auto secret_provider = factory_context.secretManager().findStaticTlsCertificateProvider(
@@ -65,7 +66,8 @@ Secret::CertificateValidationContextConfigProviderSharedPtr getProviderFromSds(
   if (sds_secret_config.has_sds_config()) {
     // Fetch dynamic secret.
     return factory_context.secretManager().findOrCreateCertificateValidationContextProvider(
-        sds_secret_config.sds_config(), sds_secret_config.name(), factory_context);
+        sds_secret_config.sds_config(), sds_secret_config.name(), factory_context,
+        factory_context.initManager());
   } else {
     // Load static secret.
     auto secret_provider =
@@ -128,7 +130,8 @@ Secret::TlsSessionTicketKeysConfigProviderSharedPtr getTlsSessionTicketKeysConfi
     if (sds_secret_config.has_sds_config()) {
       // Fetch dynamic secret.
       return factory_context.secretManager().findOrCreateTlsSessionTicketKeysContextProvider(
-          sds_secret_config.sds_config(), sds_secret_config.name(), factory_context);
+          sds_secret_config.sds_config(), sds_secret_config.name(), factory_context,
+          factory_context.initManager());
     } else {
       // Load static secret.
       auto secret_provider =
@@ -171,6 +174,7 @@ ContextConfigImpl::ContextConfigImpl(
     const std::string& default_cipher_suites, const std::string& default_curves,
     Server::Configuration::TransportSocketFactoryContext& factory_context)
     : api_(factory_context.api()), options_(factory_context.options()),
+      singleton_manager_(factory_context.singletonManager()),
       alpn_protocols_(RepeatedPtrUtil::join(config.alpn_protocols(), ",")),
       cipher_suites_(StringUtil::nonEmptyStringOrDefault(
           RepeatedPtrUtil::join(config.tls_params().cipher_suites(), ":"), default_cipher_suites)),
@@ -221,7 +225,8 @@ ContextConfigImpl::ContextConfigImpl(
     }
   }
 
-  HandshakerFactoryContextImpl handshaker_factory_context(api_, options_, alpn_protocols_);
+  HandshakerFactoryContextImpl handshaker_factory_context(api_, options_, alpn_protocols_,
+                                                          singleton_manager_);
   Ssl::HandshakerFactory* handshaker_factory;
   if (config.has_custom_handshaker()) {
     // If a custom handshaker is configured, derive the factory from the config.

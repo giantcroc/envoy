@@ -52,7 +52,6 @@
 #include "source/common/stats/timespan_impl.h"
 #include "source/common/upstream/cluster_manager_impl.h"
 #include "source/common/version/version.h"
-#include "source/server/admin/utils.h"
 #include "source/server/configuration_impl.h"
 #include "source/server/connection_handler_impl.h"
 #include "source/server/guarddog_impl.h"
@@ -61,6 +60,23 @@
 
 namespace Envoy {
 namespace Server {
+namespace {
+// TODO(alyssawilk) resolve the copy/paste code here.
+envoy::admin::v3::ServerInfo::State serverState(Init::Manager::State state,
+                                                bool health_check_failed) {
+  switch (state) {
+  case Init::Manager::State::Uninitialized:
+    return envoy::admin::v3::ServerInfo::PRE_INITIALIZING;
+  case Init::Manager::State::Initializing:
+    return envoy::admin::v3::ServerInfo::INITIALIZING;
+  case Init::Manager::State::Initialized:
+    return health_check_failed ? envoy::admin::v3::ServerInfo::DRAINING
+                               : envoy::admin::v3::ServerInfo::LIVE;
+  }
+  IS_ENVOY_BUG("unexpected server state enum");
+  return envoy::admin::v3::ServerInfo::PRE_INITIALIZING;
+}
+} // namespace
 
 InstanceImpl::InstanceImpl(
     Init::Manager& init_manager, const Options& options, Event::TimeSystem& time_system,
@@ -276,7 +292,7 @@ void InstanceImpl::updateServerStats() {
   server_stats_->total_connections_.set(listener_manager_->numConnections() +
                                         parent_stats.parent_connections_);
   server_stats_->days_until_first_cert_expiring_.set(
-      sslContextManager().daysUntilFirstCertExpires().value());
+      sslContextManager().daysUntilFirstCertExpires().value_or(0));
 
   auto secs_until_ocsp_response_expires =
       sslContextManager().secondsUntilFirstOcspResponseExpires();
@@ -284,8 +300,7 @@ void InstanceImpl::updateServerStats() {
     server_stats_->seconds_until_first_ocsp_response_expiring_.set(
         secs_until_ocsp_response_expires.value());
   }
-  server_stats_->state_.set(
-      enumToInt(Utility::serverState(initManager().state(), healthCheckFailed())));
+  server_stats_->state_.set(enumToInt(serverState(initManager().state(), healthCheckFailed())));
   server_stats_->stats_recent_lookups_.set(
       stats_store_.symbolTable().getRecentLookups([](absl::string_view, uint64_t) {}));
 }
@@ -364,7 +379,7 @@ void InstanceUtil::loadBootstrapConfig(envoy::config::bootstrap::v3::Bootstrap& 
   const envoy::config::bootstrap::v3::Bootstrap& config_proto = options.configProto();
 
   // Exactly one of config_path and config_yaml should be specified.
-  if (config_path.empty() && config_yaml.empty() && config_proto.ByteSize() == 0) {
+  if (config_path.empty() && config_yaml.empty() && config_proto.ByteSizeLong() == 0) {
     throw EnvoyException("At least one of --config-path or --config-yaml or Options::configProto() "
                          "should be non-empty");
   }
@@ -378,7 +393,7 @@ void InstanceUtil::loadBootstrapConfig(envoy::config::bootstrap::v3::Bootstrap& 
     // TODO(snowp): The fact that we do a merge here doesn't seem to be covered under test.
     bootstrap.MergeFrom(bootstrap_override);
   }
-  if (config_proto.ByteSize() != 0) {
+  if (config_proto.ByteSizeLong() != 0) {
     bootstrap.MergeFrom(config_proto);
   }
   MessageUtil::validate(bootstrap, validation_visitor);
@@ -445,6 +460,23 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
               absl::StrJoin(info.registered_headers_, ","));
   }
 
+  // Initialize the regex engine and inject to singleton.
+  // Needs to happen before stats store initialization because the stats
+  // matcher config can include regexes.
+  if (bootstrap_.has_default_regex_engine()) {
+    const auto& default_regex_engine = bootstrap_.default_regex_engine();
+    Regex::EngineFactory& factory =
+        Config::Utility::getAndCheckFactory<Regex::EngineFactory>(default_regex_engine);
+    auto config = Config::Utility::translateAnyToFactoryConfig(
+        default_regex_engine.typed_config(), messageValidationContext().staticValidationVisitor(),
+        factory);
+    regex_engine_ = factory.createEngine(*config, serverFactoryContext());
+  } else {
+    regex_engine_ = std::make_shared<Regex::GoogleReEngine>();
+  }
+  Regex::EngineSingleton::clear();
+  Regex::EngineSingleton::initialize(regex_engine_.get());
+
   // Needs to happen as early as possible in the instantiation to preempt the objects that require
   // stats.
   stats_store_.setTagProducer(Config::Utility::createTagProducer(bootstrap_, options_.statsTags()));
@@ -487,6 +519,9 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
   server_stats_->version_.set(version_int);
   if (VersionInfo::sslFipsCompliant()) {
     server_compilation_settings_stats_->fips_mode_.set(1);
+  } else {
+    // Set this explicitly so that "used" flag is set so that it can be pushed to stats sinks.
+    server_compilation_settings_stats_->fips_mode_.set(0);
   }
 
   // If user has set user_agent_name in the bootstrap config, use it.
@@ -502,6 +537,7 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
   }
 
   for (const auto& ext : Envoy::Registry::FactoryCategoryRegistry::registeredFactories()) {
+    auto registered_types = ext.second->registeredTypes();
     for (const auto& name : ext.second->allRegisteredNames()) {
       auto* extension = bootstrap_.mutable_node()->add_extensions();
       extension->set_name(std::string(name));
@@ -511,6 +547,13 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
         *extension->mutable_version() = version.value();
       }
       extension->set_disabled(ext.second->isFactoryDisabled(name));
+      auto it = registered_types.find(name);
+      if (it != registered_types.end()) {
+        std::sort(it->second.begin(), it->second.end());
+        for (const auto& type_url : it->second) {
+          extension->add_type_urls(type_url);
+        }
+      }
     }
   }
 
@@ -530,12 +573,17 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
     enable_reuse_port_default_ =
         parent_admin_shutdown_response.value().enable_reuse_port_default_ ? true : false;
   }
+
+  OptRef<Server::ConfigTracker> config_tracker;
+#ifdef ENVOY_ADMIN_FUNCTIONALITY
   admin_ = std::make_unique<AdminImpl>(initial_config.admin().profilePath(), *this,
                                        initial_config.admin().ignoreGlobalConnLimit());
 
-  loadServerFlags(initial_config.flagsPath());
+  config_tracker = admin_->getConfigTracker();
+#endif
+  secret_manager_ = std::make_unique<Secret::SecretManagerImpl>(config_tracker);
 
-  secret_manager_ = std::make_unique<Secret::SecretManagerImpl>(admin_->getConfigTracker());
+  loadServerFlags(initial_config.flagsPath());
 
   // Initialize the overload manager early so other modules can register for actions.
   overload_manager_ = std::make_unique<OverloadManagerImpl>(
@@ -635,6 +683,9 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
   }
 
   if (initial_config.admin().address()) {
+    if (!admin_) {
+      throw EnvoyException("Admin address configured but admin support compiled out");
+    }
     admin_->startHttpListener(initial_config.admin().accessLogs(), options_.adminAddressPath(),
                               initial_config.admin().address(),
                               initial_config.admin().socketOptions(),
@@ -642,8 +693,10 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
   } else {
     ENVOY_LOG(warn, "No admin address given, so no admin HTTP server started.");
   }
-  config_tracker_entry_ = admin_->getConfigTracker().add(
-      "bootstrap", [this](const Matchers::StringMatcher&) { return dumpBootstrapConfig(); });
+  if (admin_) {
+    config_tracker_entry_ = admin_->getConfigTracker().add(
+        "bootstrap", [this](const Matchers::StringMatcher&) { return dumpBootstrapConfig(); });
+  }
   if (initial_config.admin().address()) {
     admin_->addListenerToHandler(handler_.get());
   }
@@ -651,17 +704,12 @@ void InstanceImpl::initialize(Network::Address::InstanceConstSharedPtr local_add
   // Once we have runtime we can initialize the SSL context manager.
   ssl_context_manager_ = createContextManager("ssl_context_manager", time_source_);
 
-  envoy::config::core::v3::TypedExtensionConfig typed_dns_resolver_config;
-  Network::DnsResolverFactory& dns_resolver_factory =
-      Network::createDnsResolverFactoryFromProto(bootstrap_, typed_dns_resolver_config);
-  dns_resolver_ =
-      dns_resolver_factory.createDnsResolver(dispatcher(), api(), typed_dns_resolver_config);
-
   cluster_manager_factory_ = std::make_unique<Upstream::ProdClusterManagerFactory>(
-      *admin_, runtime(), stats_store_, thread_local_, dns_resolver_, *ssl_context_manager_,
-      *dispatcher_, *local_info_, *secret_manager_, messageValidationContext(), *api_,
-      http_context_, grpc_context_, router_context_, access_log_manager_, *singleton_manager_,
-      options_, quic_stat_names_, *this);
+      serverFactoryContext(), admin(), runtime(), stats_store_, thread_local_,
+      [this]() -> Network::DnsResolverSharedPtr { return this->getOrCreateDnsResolver(); },
+      *ssl_context_manager_, *dispatcher_, *local_info_, *secret_manager_,
+      messageValidationContext(), *api_, http_context_, grpc_context_, router_context_,
+      access_log_manager_, *singleton_manager_, options_, quic_stat_names_, *this);
 
   // Now the configuration gets parsed. The configuration may start setting
   // thread local data per above. See MainImpl::initialize() for why ConfigImpl
@@ -736,14 +784,11 @@ void InstanceImpl::onRuntimeReady() {
     TRY_ASSERT_MAIN_THREAD {
       Config::Utility::checkTransportVersion(hds_config);
       hds_delegate_ = std::make_unique<Upstream::HdsDelegate>(
-          stats_store_,
+          serverFactoryContext(), stats_store_,
           Config::Utility::factoryForGrpcApiConfigSource(*async_client_manager_, hds_config,
                                                          stats_store_, false)
               ->createUncachedRawAsyncClient(),
-          *dispatcher_, runtime(), stats_store_, *ssl_context_manager_, info_factory_,
-          access_log_manager_, *config_.clusterManager(), *local_info_, *admin_,
-          *singleton_manager_, thread_local_, messageValidationContext().dynamicValidationVisitor(),
-          *api_, options_);
+          stats_store_, *ssl_context_manager_, info_factory_);
     }
     END_TRY
     catch (const EnvoyException& e) {
@@ -959,7 +1004,9 @@ void InstanceImpl::shutdownAdmin() {
   ENVOY_LOG(warn, "shutting down admin due to child startup");
   stat_flush_timer_.reset();
   handler_->stopListeners();
-  admin_->closeSocket();
+  if (admin_) {
+    admin_->closeSocket();
+  }
 
   // If we still have a parent, it should be terminated now that we have a child.
   ENVOY_LOG(warn, "terminating parent process");
@@ -1015,6 +1062,17 @@ ProtobufTypes::MessagePtr InstanceImpl::dumpBootstrapConfig() {
   TimestampUtil::systemClockToTimestamp(bootstrap_config_update_time_,
                                         *(config_dump->mutable_last_updated()));
   return config_dump;
+}
+
+Network::DnsResolverSharedPtr InstanceImpl::getOrCreateDnsResolver() {
+  if (!dns_resolver_) {
+    envoy::config::core::v3::TypedExtensionConfig typed_dns_resolver_config;
+    Network::DnsResolverFactory& dns_resolver_factory =
+        Network::createDnsResolverFactoryFromProto(bootstrap_, typed_dns_resolver_config);
+    dns_resolver_ =
+        dns_resolver_factory.createDnsResolver(dispatcher(), api(), typed_dns_resolver_config);
+  }
+  return dns_resolver_;
 }
 
 bool InstanceImpl::enableReusePortDefault() { return enable_reuse_port_default_; }

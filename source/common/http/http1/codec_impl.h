@@ -34,7 +34,7 @@ class ConnectionImpl;
  */
 class StreamEncoderImpl : public virtual StreamEncoder,
                           public Stream,
-                          Logger::Loggable<Logger::Id::http>,
+                          public Logger::Loggable<Logger::Id::http>,
                           public StreamCallbackHelper,
                           public Http1StreamEncoderOptions {
 public:
@@ -62,12 +62,14 @@ public:
   void readDisable(bool disable) override;
   uint32_t bufferLimit() const override;
   absl::string_view responseDetails() override { return details_; }
-  const Network::Address::InstanceConstSharedPtr& connectionLocalAddress() override;
+  const Network::ConnectionInfoProvider& connectionInfoProvider() override;
   void setFlushTimeout(std::chrono::milliseconds) override {
     // HTTP/1 has one stream per connection, thus any data encoded is immediately written to the
     // connection, invoking any watermarks as necessary. There is no internal buffering that would
     // require a flush timeout not already covered by other timeouts.
   }
+
+  Buffer::BufferMemoryAccountSharedPtr account() const override { return buffer_memory_account_; }
 
   void setAccount(Buffer::BufferMemoryAccountSharedPtr account) override {
     // TODO(kbaichoo): implement account tracking for H1. Particularly, binding
@@ -197,6 +199,7 @@ public:
    * @return Network::Connection& the backing network connection.
    */
   Network::Connection& connection() { return connection_; }
+  const Network::Connection& connection() const { return connection_; }
 
   /**
    * Called when the active encoder has completed encoding the outbound half of the stream.
@@ -230,6 +233,7 @@ public:
   virtual void maybeAddSentinelBufferFragment(Buffer::Instance&) {}
   CodecStats& stats() { return stats_; }
   bool enableTrailers() const { return codec_settings_.enable_trailers_; }
+  virtual bool sendFullyQualifiedUrl() const { return codec_settings_.send_fully_qualified_url_; }
   HeaderKeyFormatterOptConstRef formatter() const {
     return makeOptRefFromPtr(encode_only_header_key_formatter_.get());
   }
@@ -314,10 +318,10 @@ private:
   virtual void allocTrailers() PURE;
 
   /**
-   * Called in order to complete an in progress header decode.
+   * Called for each header in order to complete an in progress header decode.
    * @return A status representing success.
    */
-  Status completeLastHeader();
+  Status completeCurrentHeader();
 
   /**
    * Check if header name contains underscore character.
@@ -341,14 +345,14 @@ private:
   void onDispatch(const Buffer::Instance& data);
 
   // ParserCallbacks.
-  ParserStatus onMessageBegin() override;
-  ParserStatus onUrl(const char* data, size_t length) override;
-  ParserStatus onStatus(const char* data, size_t length) override;
-  ParserStatus onHeaderField(const char* data, size_t length) override;
-  ParserStatus onHeaderValue(const char* data, size_t length) override;
-  ParserStatus onHeadersComplete() override;
+  CallbackResult onMessageBegin() override;
+  CallbackResult onUrl(const char* data, size_t length) override;
+  CallbackResult onStatus(const char* data, size_t length) override;
+  CallbackResult onHeaderField(const char* data, size_t length) override;
+  CallbackResult onHeaderValue(const char* data, size_t length) override;
+  CallbackResult onHeadersComplete() override;
   void bufferBody(const char* data, size_t length) override;
-  ParserStatus onMessageComplete() override;
+  CallbackResult onMessageComplete() override;
   void onChunkHeader(bool is_final_chunk) override;
 
   // Internal implementations of ParserCallbacks methods,
@@ -358,15 +362,15 @@ private:
   virtual Status onStatusBase(const char* data, size_t length) PURE;
   Status onHeaderFieldImpl(const char* data, size_t length);
   Status onHeaderValueImpl(const char* data, size_t length);
-  StatusOr<ParserStatus> onHeadersCompleteImpl();
-  virtual StatusOr<ParserStatus> onHeadersCompleteBase() PURE;
-  StatusOr<ParserStatus> onMessageCompleteImpl();
-  virtual ParserStatus onMessageCompleteBase() PURE;
+  StatusOr<CallbackResult> onHeadersCompleteImpl();
+  virtual StatusOr<CallbackResult> onHeadersCompleteBase() PURE;
+  StatusOr<CallbackResult> onMessageCompleteImpl();
+  virtual CallbackResult onMessageCompleteBase() PURE;
 
   // These helpers wrap *Impl() calls in the overrides of non-void
   // ParserCallbacks methods.
-  ParserStatus setAndCheckCallbackStatus(Status&& status);
-  ParserStatus setAndCheckCallbackStatusOr(StatusOr<ParserStatus>&& statusor);
+  CallbackResult setAndCheckCallbackStatus(Status&& status);
+  CallbackResult setAndCheckCallbackStatusOr(StatusOr<CallbackResult>&& statusor);
 
   /**
    * Push the accumulated body through the filter pipeline.
@@ -464,7 +468,7 @@ protected:
   };
   ActiveRequest* activeRequest() { return active_request_.get(); }
   // ConnectionImpl
-  ParserStatus onMessageCompleteBase() override;
+  CallbackResult onMessageCompleteBase() override;
   // Add the size of the request_url to the reported header size when processing request headers.
   uint32_t getHeadersSize() override;
 
@@ -496,7 +500,7 @@ private:
     return *bytes_meter_before_stream_;
   }
   Status onMessageBeginBase() override;
-  Envoy::StatusOr<ParserStatus> onHeadersCompleteBase() override;
+  Envoy::StatusOr<CallbackResult> onHeadersCompleteBase() override;
   // If upgrade behavior is not allowed, the HCM will have sanitized the headers out.
   bool upgradeAllowed() const override { return true; }
   void onBody(Buffer::Instance& data) override;
@@ -551,8 +555,6 @@ private:
   // The action to take when a request header name contains underscore characters.
   const envoy::config::core::v3::HttpProtocolOptions::HeadersWithUnderscoresAction
       headers_with_underscores_action_;
-
-  const bool runtime_lazy_read_disable_{};
 };
 
 /**
@@ -562,7 +564,8 @@ class ClientConnectionImpl : public ClientConnection, public ConnectionImpl {
 public:
   ClientConnectionImpl(Network::Connection& connection, CodecStats& stats,
                        ConnectionCallbacks& callbacks, const Http1Settings& settings,
-                       const uint32_t max_response_headers_count);
+                       const uint32_t max_response_headers_count,
+                       bool passing_through_proxy = false);
   // Http::ClientConnection
   RequestEncoder& newStream(ResponseDecoder& response_decoder) override;
 
@@ -576,6 +579,13 @@ private:
   };
 
   bool cannotHaveBody();
+
+  bool sendFullyQualifiedUrl() const override {
+    // Send fully qualified URLs either if the parent connection is configured to do so or this
+    // stream is passing through a proxy and the underlying transport is plaintext.
+    return ConnectionImpl::sendFullyQualifiedUrl() ||
+           (passing_through_proxy_ && !connection().ssl());
+  }
 
   // ParserCallbacks.
   Status onUrlBase(const char*, size_t) override { return okStatus(); }
@@ -593,10 +603,10 @@ private:
     return *bytes_meter_before_stream_;
   }
   Status onMessageBeginBase() override { return okStatus(); }
-  Envoy::StatusOr<ParserStatus> onHeadersCompleteBase() override;
+  Envoy::StatusOr<CallbackResult> onHeadersCompleteBase() override;
   bool upgradeAllowed() const override;
   void onBody(Buffer::Instance& data) override;
-  ParserStatus onMessageCompleteBase() override;
+  CallbackResult onMessageCompleteBase() override;
   void onResetStream(StreamResetReason reason) override;
   Status sendProtocolError(absl::string_view details) override;
   void onAboveHighWatermark() override;
@@ -648,6 +658,10 @@ private:
 
   // The default limit of 80 KiB is the vanilla http_parser behaviour.
   static constexpr uint32_t MAX_RESPONSE_HEADERS_KB = 80;
+
+  // True if the upstream connection is pointed at an HTTP/1.1 proxy, and
+  // plaintext HTTP should be sent with fully qualified URLs.
+  bool passing_through_proxy_ = false;
 };
 
 } // namespace Http1

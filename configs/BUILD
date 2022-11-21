@@ -34,14 +34,17 @@ filegroup(
             "using_deprecated_config.yaml",
             "**/*.template.yaml",
             "freebind/freebind.yaml",
+            "envoy-tap-config.yaml",
             "envoy-demo.yaml",
         ],
     ) + select({
         "//bazel:apple": ["envoy-demo.yaml"],
         "//bazel:windows_x86_64": [],
+        "//bazel:disable_admin_functionality": [],
         "//conditions:default": [
             "envoy-demo.yaml",
             "freebind/freebind.yaml",
+            "envoy-tap-config.yaml",
         ],
     }),
 )
@@ -80,6 +83,7 @@ py_binary(
     name = "example_configs_validation",
     srcs = ["example_configs_validation.py"],
     args = (
+        "--descriptor_path=$(location @envoy_api//:v3_proto_set)",
         "$(locations :configs) ",
         "$(locations //examples:configs) ",
         "$(locations //docs:configs) ",
@@ -88,8 +92,7 @@ py_binary(
         ":configs",
         "//docs:configs",
         "//examples:configs",
+        "@envoy_api//:v3_proto_set",
     ],
-    deps = [
-        "//tools/config_validation:validate_fragment",
-    ],
+    deps = [requirement("envoy.base.utils")],
 )

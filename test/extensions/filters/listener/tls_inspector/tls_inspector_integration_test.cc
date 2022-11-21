@@ -6,6 +6,7 @@
 #include "envoy/extensions/access_loggers/file/v3/file.pb.h"
 
 #include "source/common/config/api_version.h"
+#include "source/common/network/raw_buffer_socket.h"
 #include "source/common/network/utility.h"
 #include "source/extensions/filters/listener/tls_inspector/tls_inspector.h"
 #include "source/extensions/transport_sockets/tls/context_manager_impl.h"
@@ -102,8 +103,9 @@ filter_disabled:
     if (ssl_client) {
       transport_socket =
           context_->createTransportSocket(std::make_shared<Network::TransportSocketOptionsImpl>(
-              absl::string_view(""), std::vector<std::string>(),
-              std::vector<std::string>{"envoyalpn"}));
+                                              absl::string_view(""), std::vector<std::string>(),
+                                              std::vector<std::string>{"envoyalpn"}),
+                                          nullptr);
 
       if (!curves_list.empty()) {
         auto ssl_socket =
@@ -113,10 +115,11 @@ filter_disabled:
       }
     } else {
       auto transport_socket_factory = std::make_unique<Network::RawBufferSocketFactory>();
-      transport_socket = transport_socket_factory->createTransportSocket(nullptr);
+      transport_socket = transport_socket_factory->createTransportSocket(nullptr, nullptr);
     }
-    client_ = dispatcher_->createClientConnection(
-        address, Network::Address::InstanceConstSharedPtr(), std::move(transport_socket), nullptr);
+    client_ =
+        dispatcher_->createClientConnection(address, Network::Address::InstanceConstSharedPtr(),
+                                            std::move(transport_socket), nullptr, nullptr);
     client_->addConnectionCallbacks(connect_callbacks_);
     client_->connect();
     while (!connect_callbacks_.connected() && !connect_callbacks_.closed()) {
@@ -133,7 +136,7 @@ filter_disabled:
   }
 
   std::unique_ptr<Ssl::ContextManager> context_manager_;
-  Network::TransportSocketFactoryPtr context_;
+  Network::UpstreamTransportSocketFactoryPtr context_;
   ConnectionStatusCallbacks connect_callbacks_;
   testing::NiceMock<Secret::MockSecretManager> secret_manager_;
   Network::ClientConnectionPtr client_;
@@ -164,7 +167,7 @@ TEST_P(TlsInspectorIntegrationTest, ContinueOnListenerTimeout) {
   // will continue wait. Then the listener filter timeout timer will be triggered.
   Buffer::OwnedImpl buffer("fake data");
   client_->write(buffer, false);
-  // the timeout is set as one seconds, sleep 5 to trigger the timeout.
+  // The timeout is set as one seconds, advance 2 seconds to trigger the timeout.
   timeSystem().advanceTimeWaitImpl(std::chrono::milliseconds(2000));
   client_->close(Network::ConnectionCloseType::NoFlush);
   EXPECT_THAT(waitForAccessLog(listener_access_log_name_), testing::Eq("-"));

@@ -22,9 +22,9 @@ public:
   MockTransportSocketFactoryContext();
   ~MockTransportSocketFactoryContext() override;
 
-  Secret::SecretManager& secretManager() override { return *(secret_manager_.get()); }
+  Secret::SecretManager& secretManager() override { return *(secret_manager_); }
 
-  MOCK_METHOD(Server::Admin&, admin, ());
+  MOCK_METHOD(OptRef<Server::Admin>, admin, ());
   MOCK_METHOD(Ssl::ContextManager&, sslContextManager, ());
   MOCK_METHOD(Stats::Scope&, scope, ());
   MOCK_METHOD(Upstream::ClusterManager&, clusterManager, ());
@@ -48,6 +48,7 @@ public:
   testing::NiceMock<Server::MockOptions> options_;
   std::unique_ptr<Secret::SecretManager> secret_manager_;
   testing::NiceMock<AccessLog::MockAccessLogManager> access_log_manager_;
+  Singleton::ManagerImpl singleton_manager_;
 };
 } // namespace Configuration
 } // namespace Server

@@ -466,7 +466,33 @@ IoHandlePtr IoSocketHandleImpl::accept(struct sockaddr* addr, socklen_t* addrlen
 }
 
 Api::SysCallIntResult IoSocketHandleImpl::connect(Address::InstanceConstSharedPtr address) {
-  return Api::OsSysCallsSingleton::get().connect(fd_, address->sockAddr(), address->sockAddrLen());
+  auto sockaddr_to_use = address->sockAddr();
+  auto sockaddr_len_to_use = address->sockAddrLen();
+#if defined(__APPLE__) || defined(__ANDROID_API__)
+  sockaddr_in6 sin6;
+  if (sockaddr_to_use->sa_family == AF_INET && Address::forceV6()) {
+    const sockaddr_in& sin4 = reinterpret_cast<const sockaddr_in&>(*sockaddr_to_use);
+
+    // Android always uses IPv6 dual stack. Convert IPv4 to the IPv6 mapped address when
+    // connecting.
+    memset(&sin6, 0, sizeof(sin6));
+    sin6.sin6_family = AF_INET6;
+    sin6.sin6_port = sin4.sin_port;
+#if defined(__ANDROID_API__)
+    sin6.sin6_addr.s6_addr32[2] = htonl(0xffff);
+    sin6.sin6_addr.s6_addr32[3] = sin4.sin_addr.s_addr;
+#elif defined(__APPLE__)
+    sin6.sin6_addr.__u6_addr.__u6_addr32[2] = htonl(0xffff);
+    sin6.sin6_addr.__u6_addr.__u6_addr32[3] = sin4.sin_addr.s_addr;
+#endif
+    ASSERT(IN6_IS_ADDR_V4MAPPED(&sin6.sin6_addr));
+
+    sockaddr_to_use = reinterpret_cast<sockaddr*>(&sin6);
+    sockaddr_len_to_use = sizeof(sin6);
+  }
+#endif
+
+  return Api::OsSysCallsSingleton::get().connect(fd_, sockaddr_to_use, sockaddr_len_to_use);
 }
 
 Api::SysCallIntResult IoSocketHandleImpl::setOption(int level, int optname, const void* optval,
@@ -600,7 +626,7 @@ absl::optional<std::string> IoSocketHandleImpl::interfaceName() {
 
   Api::InterfaceAddressVector interface_addresses{};
   const Api::SysCallIntResult rc = os_syscalls_singleton.getifaddrs(interface_addresses);
-  RELEASE_ASSERT(!rc.return_value_, fmt::format("getiffaddrs error: {}", rc.errno_));
+  RELEASE_ASSERT(!rc.return_value_, fmt::format("getifaddrs error: {}", rc.errno_));
 
   absl::optional<std::string> selected_interface_name{};
   for (const auto& interface_address : interface_addresses) {

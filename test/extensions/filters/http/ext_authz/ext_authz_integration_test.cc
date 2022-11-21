@@ -26,7 +26,12 @@ using Headers = std::vector<std::pair<const std::string, const std::string>>;
 class ExtAuthzGrpcIntegrationTest : public Grpc::GrpcClientIntegrationParamTest,
                                     public HttpIntegrationTest {
 public:
-  ExtAuthzGrpcIntegrationTest() : HttpIntegrationTest(Http::CodecType::HTTP1, ipVersion()) {}
+  ExtAuthzGrpcIntegrationTest() : HttpIntegrationTest(Http::CodecType::HTTP1, ipVersion()) {
+    // TODO(ggreenway): add tag extraction rules.
+    // Missing stat tag-extraction rule for stat 'http.ext_authz.failure_mode_allowed' and
+    // stat_prefix 'ext_authz'.
+    skip_tag_extraction_rule_check_ = true;
+  }
 
   void createUpstreams() override {
     HttpIntegrationTest::createUpstreams();
@@ -446,13 +451,6 @@ public:
   void createUpstreams() override {
     HttpIntegrationTest::createUpstreams();
     addFakeUpstream(Http::CodecType::HTTP1);
-  }
-
-  // By default, HTTP Service uses case sensitive string matcher.
-  void disableCaseSensitiveStringMatcher() {
-    config_helper_.addRuntimeOverride(
-        "envoy.reloadable_features.ext_authz_http_service_enable_case_sensitive_string_matcher",
-        "false");
   }
 
   void initiateClientConnection() {

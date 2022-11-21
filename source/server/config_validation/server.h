@@ -24,7 +24,6 @@
 #include "source/common/runtime/runtime_impl.h"
 #include "source/common/secret/secret_manager_impl.h"
 #include "source/common/thread_local/thread_local_impl.h"
-#include "source/server/admin/admin.h"
 #include "source/server/config_validation/admin.h"
 #include "source/server/config_validation/api.h"
 #include "source/server/config_validation/cluster_manager.h"
@@ -71,7 +70,9 @@ public:
                      Filesystem::Instance& file_system);
 
   // Server::Instance
-  Admin& admin() override { return *admin_; }
+  OptRef<Admin> admin() override {
+    return makeOptRefFromPtr(static_cast<Envoy::Server::Admin*>(admin_.get()));
+  }
   Api::Api& api() override { return *api_; }
   Upstream::ClusterManager& clusterManager() override { return *config_.clusterManager(); }
   const Upstream::ClusterManager& clusterManager() const override {
@@ -148,10 +149,11 @@ public:
     return ProdListenerComponentFactory::createNetworkFilterFactoryListImpl(
         filters, filter_chain_factory_context);
   }
-  std::vector<Network::ListenerFilterFactoryCb> createListenerFilterFactoryList(
+  Filter::ListenerFilterFactoriesList createListenerFilterFactoryList(
       const Protobuf::RepeatedPtrField<envoy::config::listener::v3::ListenerFilter>& filters,
       Configuration::ListenerFactoryContext& context) override {
-    return ProdListenerComponentFactory::createListenerFilterFactoryListImpl(filters, context);
+    return ProdListenerComponentFactory::createListenerFilterFactoryListImpl(
+        filters, context, tcp_listener_config_provider_manager_);
   }
   std::vector<Network::UdpListenerFilterFactoryCb> createUdpListenerFilterFactoryList(
       const Protobuf::RepeatedPtrField<envoy::config::listener::v3::ListenerFilter>& filters,
@@ -172,6 +174,10 @@ public:
     return nullptr;
   }
   uint64_t nextListenerTag() override { return 0; }
+  Filter::TcpListenerFilterConfigProviderManagerImpl*
+  getTcpListenerConfigProviderManager() override {
+    return &tcp_listener_config_provider_manager_;
+  }
 
   // Server::WorkerFactory
   WorkerPtr createWorker(uint32_t, OverloadManager&, const std::string&) override {
@@ -230,6 +236,7 @@ private:
   Event::TimeSystem& time_system_;
   ServerFactoryContextImpl server_contexts_;
   Quic::QuicStatNames quic_stat_names_;
+  Filter::TcpListenerFilterConfigProviderManagerImpl tcp_listener_config_provider_manager_;
 };
 
 } // namespace Server

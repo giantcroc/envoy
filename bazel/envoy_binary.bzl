@@ -3,7 +3,10 @@
 load(
     ":envoy_internal.bzl",
     "envoy_copts",
+    "envoy_dbg_linkopts",
+    "envoy_exported_symbols_input",
     "envoy_external_dep_path",
+    "envoy_select_exported_symbols",
     "envoy_stdlib_deps",
     "tcmalloc_external_dep",
 )
@@ -22,13 +25,14 @@ def envoy_cc_binary(
         linkopts = [],
         tags = [],
         features = []):
-    linker_inputs = _envoy_exported_symbols_input()
+    linker_inputs = envoy_exported_symbols_input()
 
     if not linkopts:
         linkopts = _envoy_linkopts()
     if stamped:
         linkopts = linkopts + _envoy_stamped_linkopts()
         deps = deps + _envoy_stamped_deps()
+    linkopts += envoy_dbg_linkopts()
     deps = deps + [envoy_external_dep_path(dep) for dep in external_deps] + envoy_stdlib_deps()
     native.cc_binary(
         name = name,
@@ -46,26 +50,6 @@ def envoy_cc_binary(
         tags = tags,
         features = features,
     )
-
-def _envoy_exported_symbols_input():
-    return ["@envoy//bazel:exported_symbols.txt"]
-
-# Default symbols to be exported.
-# TODO(wbpcode): make this work correctly for apple/darwin.
-def _envoy_default_exported_symbols():
-    return select({
-        "@envoy//bazel:linux": [
-            "-Wl,--dynamic-list=$(location @envoy//bazel:exported_symbols.txt)",
-        ],
-        "//conditions:default": [],
-    })
-
-# Select the given values if exporting is enabled in the current build.
-def _envoy_select_exported_symbols(xs):
-    return select({
-        "@envoy//bazel:enable_exported_symbols": xs,
-        "//conditions:default": [],
-    }) + _envoy_default_exported_symbols()
 
 # Compute the final linkopts based on various options.
 def _envoy_linkopts():
@@ -96,7 +80,7 @@ def _envoy_linkopts():
         "@envoy//bazel:boringssl_fips": [],
         "@envoy//bazel:windows_x86_64": [],
         "//conditions:default": ["-pie"],
-    }) + _envoy_select_exported_symbols(["-Wl,-E"])
+    }) + envoy_select_exported_symbols(["-Wl,-E"])
 
 def _envoy_stamped_deps():
     return select({

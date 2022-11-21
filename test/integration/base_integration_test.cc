@@ -16,20 +16,15 @@
 #include "envoy/service/discovery/v3/discovery.pb.h"
 
 #include "source/common/common/assert.h"
-#include "source/common/common/fmt.h"
-#include "source/common/config/api_version.h"
 #include "source/common/event/libevent.h"
 #include "source/common/network/utility.h"
 #include "source/extensions/transport_sockets/tls/context_config_impl.h"
 #include "source/extensions/transport_sockets/tls/ssl_socket.h"
 
-#include "test/integration/autonomous_upstream.h"
 #include "test/integration/utility.h"
 #include "test/test_common/environment.h"
 #include "test/test_common/network_utility.h"
 
-#include "absl/container/fixed_array.h"
-#include "absl/strings/str_join.h"
 #include "gtest/gtest.h"
 
 namespace Envoy {
@@ -69,6 +64,11 @@ BaseIntegrationTest::BaseIntegrationTest(const InstanceConstSharedPtrFn& upstrea
   // Allow extension lookup by name in the integration tests.
   config_helper_.addRuntimeOverride("envoy.reloadable_features.no_extension_lookup_by_name",
                                     "false");
+
+#ifndef ENVOY_ADMIN_FUNCTIONALITY
+  config_helper_.addConfigModifier(
+      [&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void { bootstrap.clear_admin(); });
+#endif
 }
 
 BaseIntegrationTest::BaseIntegrationTest(Network::Address::IpVersion version,
@@ -89,7 +89,8 @@ Network::ClientConnectionPtr BaseIntegrationTest::makeClientConnectionWithOption
   Network::ClientConnectionPtr connection(dispatcher_->createClientConnection(
       Network::Utility::resolveUrl(
           fmt::format("tcp://{}:{}", Network::Test::getLoopbackAddressUrlString(version_), port)),
-      Network::Address::InstanceConstSharedPtr(), Network::Test::createRawBufferSocket(), options));
+      Network::Address::InstanceConstSharedPtr(), Network::Test::createRawBufferSocket(), options,
+      nullptr));
 
   connection->enableHalfClose(enableHalfClose());
   return connection;
@@ -103,9 +104,15 @@ void BaseIntegrationTest::initialize() {
   createUpstreams();
   createXdsUpstream();
   createEnvoy();
+
+#ifdef ENVOY_ADMIN_FUNCTIONALITY
+  if (!skip_tag_extraction_rule_check_) {
+    checkForMissingTagExtractionRules();
+  }
+#endif
 }
 
-Network::TransportSocketFactoryPtr
+Network::DownstreamTransportSocketFactoryPtr
 BaseIntegrationTest::createUpstreamTlsContext(const FakeUpstreamConfig& upstream_config) {
   envoy::extensions::transport_sockets::tls::v3::DownstreamTlsContext tls_context;
   const std::string yaml = absl::StrFormat(
@@ -152,9 +159,9 @@ void BaseIntegrationTest::createUpstreams() {
 }
 void BaseIntegrationTest::createUpstream(Network::Address::InstanceConstSharedPtr endpoint,
                                          FakeUpstreamConfig& config) {
-  Network::TransportSocketFactoryPtr factory = upstream_tls_
-                                                   ? createUpstreamTlsContext(config)
-                                                   : Network::Test::createRawBufferSocketFactory();
+  Network::DownstreamTransportSocketFactoryPtr factory =
+      upstream_tls_ ? createUpstreamTlsContext(config)
+                    : Network::Test::createRawBufferDownstreamSocketFactory();
   if (autonomous_upstream_) {
     fake_upstreams_.emplace_back(new AutonomousUpstream(std::move(factory), endpoint, config,
                                                         autonomous_allow_incomplete_streams_));
@@ -305,9 +312,11 @@ absl::optional<uint64_t> BaseIntegrationTest::waitForNextRawUpstreamConnection(
 IntegrationTcpClientPtr
 BaseIntegrationTest::makeTcpConnection(uint32_t port,
                                        const Network::ConnectionSocket::OptionsSharedPtr& options,
-                                       Network::Address::InstanceConstSharedPtr source_address) {
+                                       Network::Address::InstanceConstSharedPtr source_address,
+                                       absl::string_view destination_address) {
   return std::make_unique<IntegrationTcpClient>(*dispatcher_, *mock_buffer_factory_, port, version_,
-                                                enableHalfClose(), options, source_address);
+                                                enableHalfClose(), options, source_address,
+                                                destination_address);
 }
 
 void BaseIntegrationTest::registerPort(const std::string& key, uint32_t port) {
@@ -332,6 +341,34 @@ void BaseIntegrationTest::setUpstreamAddress(
   socket_address->set_port_value(fake_upstreams_[upstream_index]->localAddress()->ip()->port());
 }
 
+bool BaseIntegrationTest::getSocketOption(const std::string& listener_name, int level, int optname,
+                                          void* optval, socklen_t* optlen) {
+  bool listeners_ready = false;
+  absl::Mutex l;
+  std::vector<std::reference_wrapper<Network::ListenerConfig>> listeners;
+  test_server_->server().dispatcher().post([&]() {
+    listeners = test_server_->server().listenerManager().listeners();
+    l.Lock();
+    listeners_ready = true;
+    l.Unlock();
+  });
+  l.LockWhen(absl::Condition(&listeners_ready));
+  l.Unlock();
+
+  for (auto& listener : listeners) {
+    if (listener.get().name() == listener_name) {
+      for (auto& socket_factory : listener.get().listenSocketFactories()) {
+        auto socket = socket_factory->getListenSocket(0);
+        if (socket->getSocketOption(level, optname, optval, optlen).return_value_ != 0) {
+          return false;
+        }
+      }
+      return true;
+    }
+  }
+  return false;
+}
+
 void BaseIntegrationTest::registerTestServerPorts(const std::vector<std::string>& port_names,
                                                   IntegrationTestServerPtr& test_server) {
   bool listeners_ready = false;
@@ -348,22 +385,29 @@ void BaseIntegrationTest::registerTestServerPorts(const std::vector<std::string>
 
   auto listener_it = listeners.cbegin();
   auto port_it = port_names.cbegin();
-  for (; port_it != port_names.end() && listener_it != listeners.end(); ++port_it, ++listener_it) {
-    const auto listen_addr = listener_it->get().listenSocketFactory().localAddress();
-    if (listen_addr->type() == Network::Address::Type::Ip) {
-      ENVOY_LOG(debug, "registered '{}' as port {}.", *port_it, listen_addr->ip()->port());
-      registerPort(*port_it, listen_addr->ip()->port());
+  for (; port_it != port_names.end() && listener_it != listeners.end(); ++listener_it) {
+    auto socket_factory_it = listener_it->get().listenSocketFactories().begin();
+    for (; socket_factory_it != listener_it->get().listenSocketFactories().end() &&
+           port_it != port_names.end();
+         ++socket_factory_it, ++port_it) {
+      const auto listen_addr = (*socket_factory_it)->localAddress();
+      if (listen_addr->type() == Network::Address::Type::Ip) {
+        ENVOY_LOG(debug, "registered '{}' as port {}.", *port_it, listen_addr->ip()->port());
+        registerPort(*port_it, listen_addr->ip()->port());
+      }
     }
   }
-  const auto admin_addr =
-      test_server->server().admin().socket().connectionInfoProvider().localAddress();
-  if (admin_addr->type() == Network::Address::Type::Ip) {
-    registerPort("admin", admin_addr->ip()->port());
+  if (test_server->server().admin().has_value()) {
+    const auto admin_addr =
+        test_server->server().admin()->socket().connectionInfoProvider().localAddress();
+    if (admin_addr->type() == Network::Address::Type::Ip) {
+      registerPort("admin", admin_addr->ip()->port());
+    }
   }
 }
 
 std::string getListenerDetails(Envoy::Server::Instance& server) {
-  const auto& cbs_maps = server.admin().getConfigTracker().getCallbacksMap();
+  const auto& cbs_maps = server.admin()->getConfigTracker().getCallbacksMap();
   ProtobufTypes::MessagePtr details = cbs_maps.at("listeners")(Matchers::UniversalStringMatcher());
   auto listener_info = Protobuf::down_cast<envoy::admin::v3::ListenersConfigDump>(*details);
   return MessageUtil::getYamlStringFromMessage(listener_info.dynamic_listeners(0).error_state());
@@ -384,7 +428,7 @@ void BaseIntegrationTest::createGeneratedApiTestServer(
       bootstrap_path, version_, on_server_ready_function_, on_server_init_function_,
       deterministic_value_, timeSystem(), *api_, defer_listener_finalization_, process_object_,
       validator_config, concurrency_, drain_time_, drain_strategy_, proxy_buffer_factory_,
-      use_real_stats_);
+      use_real_stats_, use_bootstrap_node_metadata_);
   if (config_helper_.bootstrap().static_resources().listeners_size() > 0 &&
       !defer_listener_finalization_) {
 
@@ -463,33 +507,25 @@ void BaseIntegrationTest::useListenerAccessLog(absl::string_view format) {
   ASSERT_TRUE(config_helper_.setListenerAccessLog(listener_access_log_name_, format));
 }
 
-// Assuming logs are newline delineated, return the start index of the nth entry.
-// If there are not n entries, it will return file.length() (end of the string
-// index)
-size_t entryIndex(const std::string& file, uint32_t entry) {
-  size_t index = 0;
-  for (uint32_t i = 0; i < entry; ++i) {
-    index = file.find('\n', index);
-    if (index == std::string::npos || index == file.length()) {
-      return file.length();
-    }
-    ++index;
-  }
-  return index;
-}
-
-std::string BaseIntegrationTest::waitForAccessLog(const std::string& filename, uint32_t entry) {
+std::string BaseIntegrationTest::waitForAccessLog(const std::string& filename, uint32_t entry,
+                                                  bool allow_excess_entries) {
   // Wait a max of 1s for logs to flush to disk.
   std::string contents;
   for (int i = 0; i < 1000; ++i) {
     contents = TestEnvironment::readFileToStringForTest(filename);
-    size_t index = entryIndex(contents, entry);
-    if (contents.length() > index) {
-      return contents.substr(index);
+    std::vector<std::string> entries = absl::StrSplit(contents, '\n', absl::SkipEmpty());
+    if (entries.size() >= entry + 1) {
+      // Often test authors will waitForAccessLog() for multiple requests, and
+      // not increment the entry number for the second wait. Guard against that.
+      EXPECT_TRUE(allow_excess_entries || entries.size() == entry + 1)
+          << "Waiting for entry index " << entry << " but it was not the last entry as there were "
+          << entries.size() << "\n"
+          << contents;
+      return entries[entry];
     }
     absl::SleepFor(absl::Milliseconds(1));
   }
-  RELEASE_ASSERT(0, absl::StrCat("Timed out waiting for access log. Found: ", contents));
+  RELEASE_ASSERT(0, absl::StrCat("Timed out waiting for access log. Found: '", contents, "'"));
   return "";
 }
 
@@ -514,7 +550,7 @@ void BaseIntegrationTest::createXdsUpstream() {
     upstream_stats_store_ = std::make_unique<Stats::TestIsolatedStoreImpl>();
     auto context = std::make_unique<Extensions::TransportSockets::Tls::ServerSslSocketFactory>(
         std::move(cfg), context_manager_, *upstream_stats_store_, std::vector<std::string>{});
-    addFakeUpstream(std::move(context), Http::CodecType::HTTP2);
+    addFakeUpstream(std::move(context), Http::CodecType::HTTP2, /*autonomous_upstream=*/false);
   }
   xds_upstream_ = fake_upstreams_.back().get();
 }
@@ -568,9 +604,14 @@ AssertionResult compareSets(const std::set<std::string>& set1, const std::set<st
 AssertionResult BaseIntegrationTest::compareSotwDiscoveryRequest(
     const std::string& expected_type_url, const std::string& expected_version,
     const std::vector<std::string>& expected_resource_names, bool expect_node,
-    const Protobuf::int32 expected_error_code, const std::string& expected_error_substring) {
+    const Protobuf::int32 expected_error_code, const std::string& expected_error_substring,
+    FakeStream* stream) {
+  if (stream == nullptr) {
+    stream = xds_stream_.get();
+  }
+
   envoy::service::discovery::v3::DiscoveryRequest discovery_request;
-  VERIFY_ASSERTION(xds_stream_->waitForGrpcMessage(*dispatcher_, discovery_request));
+  VERIFY_ASSERTION(stream->waitForGrpcMessage(*dispatcher_, discovery_request));
 
   if (expect_node) {
     EXPECT_TRUE(discovery_request.has_node());
@@ -694,4 +735,67 @@ AssertionResult BaseIntegrationTest::compareDeltaDiscoveryRequest(
   return AssertionSuccess();
 }
 
+// Attempt to heuristically discover missing tag-extraction rules when new stats are added.
+// This is done by looking through the entire config for fields named `stat_prefix`, and then
+// validating that those values do not appear in the tag-extracted name of any stat. The alternate
+// approach of looking for the prefix in the extracted tags was more difficult because in the tests
+// some prefix values are reused (leading to false negatives) and some tests have base configuration
+// that sets a stat_prefix but don't produce any stats at all with that configuration (leading to
+// false positives).
+//
+// To add a rule, see `source/common/config/well_known_names.cc`.
+//
+// This is done in all integration tests because it is testing new stats and scopes that are created
+// for which the author isn't aware that tag extraction rules need to be written, and thus the
+// author wouldn't think to write tests for that themselves.
+void BaseIntegrationTest::checkForMissingTagExtractionRules() {
+  BufferingStreamDecoderPtr response = IntegrationUtil::makeSingleRequest(
+      test_server_->adminAddress(), "GET", "/config_dump", "", Http::CodecType::HTTP1);
+  EXPECT_TRUE(response->complete());
+  if (!response->complete()) {
+    // Allow the rest of the test to complete for better diagnostic information about the failure.
+    return;
+  }
+
+  EXPECT_EQ("200", response->headers().getStatusValue());
+  Json::ObjectSharedPtr json = Json::Factory::loadFromString(response->body());
+
+  std::vector<std::string> stat_prefixes;
+  Json::ObjectCallback find_stat_prefix = [&](const std::string& name,
+                                              const Json::Object& root) -> bool {
+    // Looking for `stat_prefix` is based on precedent for how this is usually named in the config.
+    // If there are other names used for a similar purpose, this check could be expanded to add them
+    // also.
+    if (name == "stat_prefix") {
+      auto prefix = root.asString();
+      if (!prefix.empty()) {
+        stat_prefixes.push_back(prefix);
+      }
+    } else if (root.isObject()) {
+      root.iterate(find_stat_prefix);
+    } else if (root.isArray()) {
+      std::vector<Json::ObjectSharedPtr> elements = root.asObjectArray();
+      for (const auto& element : elements) {
+        find_stat_prefix("", *element);
+      }
+    }
+    return true;
+  };
+  find_stat_prefix("", *json);
+  ENVOY_LOG_MISC(debug, "discovered stat_prefixes {}", stat_prefixes);
+
+  auto check_metric = [&](auto& metric) {
+    // Validate that the `stat_prefix` string doesn't appear in the tag-extracted name, indicating
+    // that it wasn't extracted.
+    const std::string tag_extracted_name = metric.tagExtractedName();
+    for (const std::string& stat_prefix : stat_prefixes) {
+      EXPECT_EQ(tag_extracted_name.find(stat_prefix), std::string::npos)
+          << "Missing stat tag-extraction rule for stat '" << tag_extracted_name
+          << "' and stat_prefix '" << stat_prefix << "'";
+    }
+  };
+  test_server_->statStore().forEachCounter(nullptr, check_metric);
+  test_server_->statStore().forEachGauge(nullptr, check_metric);
+  test_server_->statStore().forEachHistogram(nullptr, check_metric);
+}
 } // namespace Envoy

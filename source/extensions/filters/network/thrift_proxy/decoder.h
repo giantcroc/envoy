@@ -88,7 +88,14 @@ public:
   ProtocolState currentState() const { return state_; }
 
   /**
-   * Set the current state. Used for testing only.
+   * Consumes whole passthrough data without the message start portion.
+   * @param buffer a buffer containing whole passthrough data
+   * @throw Envoy Exception if thrown by the underlying Protocol
+   */
+  void runPassthroughData(Buffer::Instance& buffer);
+
+  /**
+   * Set the current state. Used for testing and decoder internal only.
    */
   void setCurrentState(ProtocolState state) { state_ = state; }
 
@@ -203,6 +210,11 @@ public:
    * See https://github.com/apache/thrift/blob/master/lib/ts/thrift.d.ts#L68.
    */
   virtual bool isRequest() const PURE;
+
+  /**
+   * @return True if payload header keys should be treated as case-sensitive.
+   */
+  virtual bool headerKeysPreserveCase() const PURE;
 };
 
 /**

@@ -27,8 +27,7 @@ void TcpConnPool::onPoolReady(Envoy::Tcp::ConnectionPool::ConnectionDataPtr&& co
   Network::Connection& latched_conn = conn_data->connection();
   auto upstream =
       std::make_unique<TcpUpstream>(&callbacks_->upstreamToDownstream(), std::move(conn_data));
-  callbacks_->onPoolReady(std::move(upstream), host,
-                          latched_conn.connectionInfoProvider().localAddress(),
+  callbacks_->onPoolReady(std::move(upstream), host, latched_conn.connectionInfoProvider(),
                           latched_conn.streamInfo(), {});
 }
 
@@ -47,12 +46,14 @@ Envoy::Http::Status TcpUpstream::encodeHeaders(const Envoy::Http::RequestHeaderM
                                                bool end_stream) {
   // Headers should only happen once, so use this opportunity to add the proxy
   // proto header, if configured.
-  if (upstream_request_->routeEntry().connectConfig().has_value()) {
+  const Router::RouteEntry* route_entry = upstream_request_->route().routeEntry();
+  ASSERT(route_entry != nullptr);
+  if (route_entry->connectConfig().has_value()) {
     Buffer::OwnedImpl data;
-    auto& connect_config = upstream_request_->routeEntry().connectConfig().value();
-    if (connect_config.has_proxy_protocol_config()) {
+    auto& connect_config = route_entry->connectConfig().value();
+    if (connect_config.has_proxy_protocol_config() && upstream_request_->connection().has_value()) {
       Extensions::Common::ProxyProtocol::generateProxyProtoHeader(
-          connect_config.proxy_protocol_config(), upstream_request_->connection(), data);
+          connect_config.proxy_protocol_config(), *upstream_request_->connection(), data);
     }
 
     if (data.length() != 0 || end_stream) {

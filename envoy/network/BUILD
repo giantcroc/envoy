@@ -62,8 +62,11 @@ envoy_cc_library(
         ":socket_interface",
         "//envoy/api:io_error_interface",
         "//envoy/buffer:buffer_interface",
+        "//envoy/config:typed_config_interface",
+        "//envoy/config:typed_metadata_interface",
         "//envoy/stats:stats_interface",
         "//envoy/stats:stats_macros",
+        "@envoy_api//envoy/config/core/v3:pkg_cc_proto",
     ],
 )
 
@@ -179,6 +182,7 @@ envoy_cc_library(
         "//envoy/buffer:buffer_interface",
         "//envoy/network:listen_socket_interface",
         "//envoy/ssl:connection_interface",
+        "//envoy/ssl:context_interface",
         "//envoy/stream_info:filter_state_interface",
     ],
 )

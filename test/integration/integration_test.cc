@@ -3,8 +3,10 @@
 #include <string>
 
 #include "envoy/config/bootstrap/v3/bootstrap.pb.h"
+#include "envoy/config/listener/v3/listener.pb.h"
 #include "envoy/config/route/v3/route_components.pb.h"
 #include "envoy/extensions/filters/network/http_connection_manager/v3/http_connection_manager.pb.h"
+#include "envoy/registry/registry.h"
 
 #include "source/common/http/header_map_impl.h"
 #include "source/common/http/headers.h"
@@ -119,6 +121,7 @@ TEST_P(IntegrationTest, BadPostListenSocketOption) {
 
 // Make sure we have correctly specified per-worker performance stats.
 TEST_P(IntegrationTest, PerWorkerStatsAndBalancing) {
+  DISABLE_IF_ADMIN_DISABLED; // Uses admin stats
   concurrency_ = 2;
   config_helper_.addConfigModifier([&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void {
     auto* listener = bootstrap.mutable_static_resources()->mutable_listeners(0);
@@ -127,6 +130,76 @@ TEST_P(IntegrationTest, PerWorkerStatsAndBalancing) {
   initialize();
 
   // Per-worker listener stats.
+  auto check_listener_stats = [this](uint64_t cx_active, uint64_t cx_total) {
+    if (GetParam() == Network::Address::IpVersion::v4) {
+      test_server_->waitForGaugeEq("listener.127.0.0.1_0.worker_0.downstream_cx_active", cx_active);
+      test_server_->waitForGaugeEq("listener.127.0.0.1_0.worker_1.downstream_cx_active", cx_active);
+      test_server_->waitForCounterEq("listener.127.0.0.1_0.worker_0.downstream_cx_total", cx_total);
+      test_server_->waitForCounterEq("listener.127.0.0.1_0.worker_1.downstream_cx_total", cx_total);
+    } else {
+      test_server_->waitForGaugeEq("listener.[__1]_0.worker_0.downstream_cx_active", cx_active);
+      test_server_->waitForGaugeEq("listener.[__1]_0.worker_1.downstream_cx_active", cx_active);
+      test_server_->waitForCounterEq("listener.[__1]_0.worker_0.downstream_cx_total", cx_total);
+      test_server_->waitForCounterEq("listener.[__1]_0.worker_1.downstream_cx_total", cx_total);
+    }
+  };
+  check_listener_stats(0, 0);
+
+  // Main thread admin listener stats.
+  test_server_->waitForCounterExists("listener.admin.main_thread.downstream_cx_total");
+
+  // Per-thread watchdog stats.
+  test_server_->waitForCounterExists("server.main_thread.watchdog_miss");
+  test_server_->waitForCounterExists("server.worker_0.watchdog_miss");
+  test_server_->waitForCounterExists("server.worker_1.watchdog_miss");
+
+  codec_client_ = makeHttpConnection(lookupPort("http"));
+  IntegrationCodecClientPtr codec_client2 = makeHttpConnection(lookupPort("http"));
+  check_listener_stats(1, 1);
+
+  codec_client_->close();
+  codec_client2->close();
+  check_listener_stats(0, 1);
+}
+
+class TestConnectionBalanceFactory : public Network::ConnectionBalanceFactory {
+public:
+  ProtobufTypes::MessagePtr createEmptyConfigProto() override {
+    // Using Struct instead of a custom empty config proto. This is only allowed in tests.
+    return ProtobufTypes::MessagePtr{new Envoy::ProtobufWkt::Struct()};
+  }
+  Network::ConnectionBalancerSharedPtr
+  createConnectionBalancerFromProto(const Protobuf::Message&,
+                                    Server::Configuration::FactoryContext&) override {
+    return std::make_shared<Network::ExactConnectionBalancerImpl>();
+  }
+  std::string name() const override { return "envoy.network.connection_balance.test"; }
+};
+
+// Test extend balance.
+TEST_P(IntegrationTest, ConnectionBalanceFactory) {
+  DISABLE_IF_ADMIN_DISABLED; // Uses admin stats
+  concurrency_ = 2;
+
+  TestConnectionBalanceFactory factory;
+  Registry::InjectFactory<Envoy::Network::ConnectionBalanceFactory> registered(factory);
+
+  config_helper_.addConfigModifier([&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void {
+    TestConnectionBalanceFactory test_connection_balancer;
+    Registry::InjectFactory<Envoy::Network::ConnectionBalanceFactory> inject_factory(
+        test_connection_balancer);
+
+    auto* listener = bootstrap.mutable_static_resources()->mutable_listeners(0);
+
+    auto* connection_balance_config = listener->mutable_connection_balance_config();
+    auto* extend_balance_config = connection_balance_config->mutable_extend_balance();
+    extend_balance_config->set_name("envoy.network.connection_balance.test");
+    extend_balance_config->mutable_typed_config()->set_type_url(
+        "type.googleapis.com/google.protobuf.Struct");
+  });
+
+  initialize();
+
   auto check_listener_stats = [this](uint64_t cx_active, uint64_t cx_total) {
     if (GetParam() == Network::Address::IpVersion::v4) {
       test_server_->waitForGaugeEq("listener.127.0.0.1_0.worker_0.downstream_cx_active", cx_active);
@@ -222,16 +295,19 @@ TEST_P(IntegrationTest, RouterDirectResponseWithBody) {
         auto* header_value_option = route_config->mutable_response_headers_to_add()->Add();
         header_value_option->mutable_header()->set_key("x-additional-header");
         header_value_option->mutable_header()->set_value("example-value");
-        header_value_option->mutable_append()->set_value(false);
+        header_value_option->set_append_action(
+            envoy::config::core::v3::HeaderValueOption::OVERWRITE_IF_EXISTS_OR_ADD);
         header_value_option = route_config->mutable_response_headers_to_add()->Add();
         header_value_option->mutable_header()->set_key("content-type");
         header_value_option->mutable_header()->set_value("text/html");
-        header_value_option->mutable_append()->set_value(false);
+        header_value_option->set_append_action(
+            envoy::config::core::v3::HeaderValueOption::OVERWRITE_IF_EXISTS_OR_ADD);
         // Add a wrong content-length.
         header_value_option = route_config->mutable_response_headers_to_add()->Add();
         header_value_option->mutable_header()->set_key("content-length");
         header_value_option->mutable_header()->set_value("2000");
-        header_value_option->mutable_append()->set_value(false);
+        header_value_option->set_append_action(
+            envoy::config::core::v3::HeaderValueOption::OVERWRITE_IF_EXISTS_OR_ADD);
         auto* virtual_host = route_config->add_virtual_hosts();
         virtual_host->set_name(domain);
         virtual_host->add_domains(domain);
@@ -270,16 +346,19 @@ TEST_P(IntegrationTest, RouterDirectResponseEmptyBody) {
         auto* header_value_option = route_config->mutable_response_headers_to_add()->Add();
         header_value_option->mutable_header()->set_key("x-additional-header");
         header_value_option->mutable_header()->set_value("example-value");
-        header_value_option->mutable_append()->set_value(false);
+        header_value_option->set_append_action(
+            envoy::config::core::v3::HeaderValueOption::OVERWRITE_IF_EXISTS_OR_ADD);
         header_value_option = route_config->mutable_response_headers_to_add()->Add();
         header_value_option->mutable_header()->set_key("content-type");
         header_value_option->mutable_header()->set_value("text/html");
-        header_value_option->mutable_append()->set_value(false);
+        header_value_option->set_append_action(
+            envoy::config::core::v3::HeaderValueOption::OVERWRITE_IF_EXISTS_OR_ADD);
         // Add a wrong content-length.
         header_value_option = route_config->mutable_response_headers_to_add()->Add();
         header_value_option->mutable_header()->set_key("content-length");
         header_value_option->mutable_header()->set_value("2000");
-        header_value_option->mutable_append()->set_value(false);
+        header_value_option->set_append_action(
+            envoy::config::core::v3::HeaderValueOption::OVERWRITE_IF_EXISTS_OR_ADD);
         auto* virtual_host = route_config->add_virtual_hosts();
         virtual_host->set_name(domain);
         virtual_host->add_domains(domain);
@@ -417,42 +496,6 @@ TEST_P(IntegrationTest, EnvoyProxyingEarly1xxWithEncoderFilter) {
 
 TEST_P(IntegrationTest, EnvoyProxyingLate1xxWithEncoderFilter) {
   testEnvoyProxying1xx(false, true);
-}
-
-// When the runtime feature `http_100_continue_case_insensitive` is disabled, the "100-Continue"
-// (upper case C) is not counted as "100-continue". As a consequence, the response does not contain
-// the `100` status code as if Envoy does not see `expect` header.
-TEST_P(IntegrationTest, RuntimeFeature100ContinueCaseInsensitiveDisabled) {
-  config_helper_.addRuntimeOverride("envoy.reloadable_features.http_100_continue_case_insensitive",
-                                    "false");
-
-  config_helper_.addConfigModifier(
-      [&](envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager&
-              hcm) -> void { hcm.set_proxy_100_continue(false); });
-  initialize();
-
-  codec_client_ = makeHttpConnection(lookupPort("http"));
-  auto encoder_decoder =
-      codec_client_->startRequest(Http::TestRequestHeaderMapImpl{{":method", "GET"},
-                                                                 {":path", "/dynamo/url"},
-                                                                 {":scheme", "http"},
-                                                                 {":authority", "sni.lyft.com"},
-                                                                 {"expect", "100-Continue"}});
-  request_encoder_ = &encoder_decoder.first;
-  auto response = std::move(encoder_decoder.second);
-
-  // Send all of the request data and wait for it to be received upstream.
-  ASSERT_TRUE(fake_upstreams_[0]->waitForHttpConnection(*dispatcher_, fake_upstream_connection_));
-  ASSERT_TRUE(fake_upstream_connection_->waitForNewStream(*dispatcher_, upstream_request_));
-  codec_client_->sendData(*request_encoder_, 10, true);
-  ASSERT_TRUE(upstream_request_->waitForEndStream(*dispatcher_));
-  upstream_request_->encodeHeaders(default_response_headers_, true);
-  ASSERT_TRUE(response->waitForEndStream());
-  EXPECT_TRUE(response->complete());
-
-  // The response contains the status code 200 but does not contain the status code 100.
-  EXPECT_EQ(nullptr, response->informationalHeaders());
-  EXPECT_EQ("200", response->headers().getStatusValue());
 }
 
 // Regression test for https://github.com/envoyproxy/envoy/issues/10923.
@@ -753,6 +796,11 @@ TEST_P(IntegrationTest, UpstreamDisconnectWithTwoRequests) {
 }
 
 TEST_P(IntegrationTest, TestSmuggling) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23289) - uniform handling of Transfer-Encoding validation between codec and UHV
+  return;
+#endif
+
   config_helper_.disableDelayClose();
   initialize();
 
@@ -880,6 +928,11 @@ TEST_P(IntegrationTest, TestServerAllowChunkedLength) {
 }
 
 TEST_P(IntegrationTest, TestClientAllowChunkedLength) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23289) - uniform handling of Transfer-Encoding validation between codec and UHV
+  return;
+#endif
+
   config_helper_.addConfigModifier([&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void {
     RELEASE_ASSERT(bootstrap.mutable_static_resources()->clusters_size() == 1, "");
     if (fake_upstreams_[0]->httpType() == Http::CodecType::HTTP1) {
@@ -990,6 +1043,11 @@ TEST_P(IntegrationTest, BadHeader) {
 }
 
 TEST_P(IntegrationTest, Http10Disabled) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23287) - Determine HTTP/0.9 and HTTP/1.0 support within UHV
+  return;
+#endif
+
   initialize();
   std::string response;
   sendRawHttpAndWaitForResponse(lookupPort("http"), "GET / HTTP/1.0\r\n\r\n", &response, true);
@@ -997,6 +1055,11 @@ TEST_P(IntegrationTest, Http10Disabled) {
 }
 
 TEST_P(IntegrationTest, Http10DisabledWithUpgrade) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23287) - Determine HTTP/0.9 and HTTP/1.0 support within UHV
+  return;
+#endif
+
   initialize();
   std::string response;
   sendRawHttpAndWaitForResponse(lookupPort("http"), "GET / HTTP/1.0\r\nUpgrade: h2c\r\n\r\n",
@@ -1006,6 +1069,11 @@ TEST_P(IntegrationTest, Http10DisabledWithUpgrade) {
 
 // Turn HTTP/1.0 support on and verify 09 style requests work.
 TEST_P(IntegrationTest, Http09Enabled) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23287) - Determine HTTP/0.9 and HTTP/1.0 support within UHV
+  return;
+#endif
+
   useAccessLog();
   autonomous_upstream_ = true;
   config_helper_.addConfigModifier(&setAllowHttp10WithDefaultHost);
@@ -1025,6 +1093,11 @@ TEST_P(IntegrationTest, Http09Enabled) {
 }
 
 TEST_P(IntegrationTest, Http09WithKeepalive) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23287) - Determine HTTP/0.9 and HTTP/1.0 support within UHV
+  return;
+#endif
+
   useAccessLog();
   autonomous_upstream_ = true;
   config_helper_.addConfigModifier(&setAllowHttp10WithDefaultHost);
@@ -1041,6 +1114,11 @@ TEST_P(IntegrationTest, Http09WithKeepalive) {
 
 // Turn HTTP/1.0 support on and verify the request is proxied and the default host is sent upstream.
 TEST_P(IntegrationTest, Http10Enabled) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23287) - Determine HTTP/0.9 and HTTP/1.0 support within UHV
+  return;
+#endif
+
   autonomous_upstream_ = true;
   config_helper_.addConfigModifier(&setAllowHttp10WithDefaultHost);
   initialize();
@@ -1059,6 +1137,38 @@ TEST_P(IntegrationTest, Http10Enabled) {
   EXPECT_THAT(response, StartsWith("HTTP/1.0 200 OK\r\n"));
   EXPECT_THAT(response, HasSubstr("connection: close"));
   EXPECT_THAT(response, Not(HasSubstr("transfer-encoding: chunked\r\n")));
+}
+
+TEST_P(IntegrationTest, SendFullyQualifiedUrl) {
+  config_helper_.addConfigModifier(setEnableUpstreamTrailersHttp1());
+  config_helper_.addConfigModifier([&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void {
+    RELEASE_ASSERT(bootstrap.mutable_static_resources()->clusters_size() == 1, "");
+    ConfigHelper::HttpProtocolOptions protocol_options;
+    protocol_options.mutable_explicit_http_config()
+        ->mutable_http_protocol_options()
+        ->set_send_fully_qualified_url(true);
+    ConfigHelper::setProtocolOptions(*bootstrap.mutable_static_resources()->mutable_clusters(0),
+                                     protocol_options);
+  });
+  initialize();
+
+  auto tcp_client = makeTcpConnection(lookupPort("http"));
+  ASSERT_TRUE(tcp_client->write("GET / HTTP/1.1\r\nHost: host\r\n\r\n"));
+  FakeRawConnectionPtr fake_upstream_connection;
+  ASSERT_TRUE(fake_upstreams_[0]->waitForRawConnection(fake_upstream_connection));
+  std::string data;
+  ASSERT_TRUE(fake_upstream_connection->waitForData(
+      FakeRawConnection::waitForInexactMatch("\r\n\r\n"), &data));
+  EXPECT_TRUE(absl::StrContains(data, "http://host/"));
+
+  ASSERT_TRUE(
+      fake_upstream_connection->write("HTTP/1.1 200 OK\r\nTransfer-encoding: chunked\r\n\r\n"));
+  tcp_client->waitForData("\r\n\r\n", false);
+  std::string response = tcp_client->data();
+
+  ASSERT_TRUE(fake_upstream_connection->close());
+  ASSERT_TRUE(fake_upstream_connection->waitForDisconnect());
+  tcp_client->close();
 }
 
 TEST_P(IntegrationTest, TestInlineHeaders) {
@@ -1210,6 +1320,11 @@ TEST_P(IntegrationTest, PipelineWithTrailers) {
 // an inline sendLocalReply to make sure the "kick" works under the call stack
 // of dispatch as well as when a response is proxied from upstream.
 TEST_P(IntegrationTest, PipelineInline) {
+#ifdef ENVOY_ENABLE_UHV
+  // TODO(#23287) - Determine HTTP/0.9 and HTTP/1.0 support within UHV
+  return;
+#endif
+
   config_helper_.addConfigModifier(
       [](envoy::extensions::filters::network::http_connection_manager::v3::HttpConnectionManager&
              hcm) { hcm.mutable_stream_error_on_invalid_http_message()->set_value(true); });
@@ -2000,6 +2115,7 @@ TEST_P(IntegrationTest, Response204WithBody) {
 }
 
 TEST_P(IntegrationTest, QuitQuitQuit) {
+  DISABLE_IF_ADMIN_DISABLED; // Uses admin interface.
   initialize();
   test_server_->useAdminInterfaceToQuit(true);
 }
@@ -2287,6 +2403,9 @@ TEST_P(IntegrationTest, SetRouteToDelegatingRouteWithClusterOverride) {
 
   config_helper_.prependFilter(R"EOF(
     name: set-route-filter
+    typed_config:
+      "@type": type.googleapis.com/test.integration.filters.SetRouteFilterConfig
+      cluster_override: cluster_override
     )EOF");
 
   setUpstreamCount(2);

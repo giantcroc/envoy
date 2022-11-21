@@ -173,7 +173,17 @@ envoy_cc_test(
 )
 
 envoy_cc_test(
-    name = "fancy_log_macros_test",
+    name = "log_verbosity_update_test",
+    srcs = ["log_verbosity_update_test.cc"],
+    args = ["--enable-fine-grain-logging"],
+    deps = [
+        "//source/common/common:minimal_logger_lib",
+        "//test/test_common:logging_lib",
+    ],
+)
+
+envoy_cc_test(
+    name = "fine_grain_log_macros_test",
     srcs = ["log_macros_test.cc"],
     args = ["--enable-fine-grain-logging"],
     deps = [
@@ -221,6 +231,7 @@ envoy_cc_test(
         "//source/common/common:matchers_lib",
         "//source/common/config:metadata_lib",
         "//source/common/protobuf:utility_lib",
+        "//source/common/stream_info:filter_state_lib",
         "//test/test_common:utility_lib",
         "@envoy_api//envoy/config/core/v3:pkg_cc_proto",
         "@envoy_api//envoy/type/matcher/v3:pkg_cc_proto",
@@ -451,5 +462,13 @@ envoy_cc_test(
     deps = [
         "//source/common/common:scope_tracked_object_stack",
         "//source/common/common:utility_lib",
+    ],
+)
+
+envoy_cc_test(
+    name = "union_string_test",
+    srcs = ["union_string_test.cc"],
+    deps = [
+        "//envoy/common:union_string",
     ],
 )

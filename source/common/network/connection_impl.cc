@@ -268,6 +268,11 @@ void ConnectionImpl::closeSocket(ConnectionEvent close_type) {
   ConnectionImpl::raiseEvent(close_type);
 }
 
+void ConnectionImpl::onConnected() {
+  ASSERT(!connecting_);
+  transport_socket_->onConnected();
+}
+
 void ConnectionImpl::noDelay(bool enable) {
   // There are cases where a connection to localhost can immediately fail (e.g., if the other end
   // does not have enough fds, reaches a backlog limit, etc.). Because we run with deferred error
@@ -683,7 +688,6 @@ void ConnectionImpl::onWriteReady() {
       ENVOY_CONN_LOG_EVENT(debug, "connection_connected", "connected", *this);
       connecting_ = false;
       onConnected();
-      transport_socket_->onConnected();
       // It's possible that we closed during the connect callback.
       if (state() != State::Open) {
         ENVOY_CONN_LOG_EVENT(debug, "connection_closed_callback", "close during connected callback",
@@ -811,9 +815,9 @@ void ConnectionImpl::dumpState(std::ostream& os, int indent_level) const {
 ServerConnectionImpl::ServerConnectionImpl(Event::Dispatcher& dispatcher,
                                            ConnectionSocketPtr&& socket,
                                            TransportSocketPtr&& transport_socket,
-                                           StreamInfo::StreamInfo& stream_info, bool connected)
+                                           StreamInfo::StreamInfo& stream_info)
     : ConnectionImpl(dispatcher, std::move(socket), std::move(transport_socket), stream_info,
-                     connected) {}
+                     true) {}
 
 void ServerConnectionImpl::setTransportSocketConnectTimeout(std::chrono::milliseconds timeout,
                                                             Stats::Counter& timeout_stat) {
@@ -843,6 +847,17 @@ void ServerConnectionImpl::raiseEvent(ConnectionEvent event) {
   }
   ConnectionImpl::raiseEvent(event);
 }
+bool ServerConnectionImpl::initializeReadFilters() {
+  bool initialized = ConnectionImpl::initializeReadFilters();
+  if (initialized) {
+    // Server connection starts as connected, and we must explicitly signal to
+    // the downstream transport socket that the underlying socket is connected.
+    // We delay this step until after the filters are initialized and can
+    // receive the connection events.
+    onConnected();
+  }
+  return initialized;
+}
 
 void ServerConnectionImpl::onTransportSocketConnectTimeout() {
   stream_info_.setConnectionTerminationDetails(kTransportSocketConnectTimeoutTerminationDetails);
@@ -855,15 +870,18 @@ ClientConnectionImpl::ClientConnectionImpl(
     Event::Dispatcher& dispatcher, const Address::InstanceConstSharedPtr& remote_address,
     const Network::Address::InstanceConstSharedPtr& source_address,
     Network::TransportSocketPtr&& transport_socket,
-    const Network::ConnectionSocket::OptionsSharedPtr& options)
+    const Network::ConnectionSocket::OptionsSharedPtr& options,
+    const Network::TransportSocketOptionsConstSharedPtr& transport_options)
     : ClientConnectionImpl(dispatcher, std::make_unique<ClientSocketImpl>(remote_address, options),
-                           source_address, std::move(transport_socket), options) {}
+                           source_address, std::move(transport_socket), options,
+                           transport_options) {}
 
 ClientConnectionImpl::ClientConnectionImpl(
     Event::Dispatcher& dispatcher, std::unique_ptr<ConnectionSocket> socket,
     const Address::InstanceConstSharedPtr& source_address,
     Network::TransportSocketPtr&& transport_socket,
-    const Network::ConnectionSocket::OptionsSharedPtr& options)
+    const Network::ConnectionSocket::OptionsSharedPtr& options,
+    const Network::TransportSocketOptionsConstSharedPtr& transport_options)
     : ConnectionImpl(dispatcher, std::move(socket), std::move(transport_socket), stream_info_,
                      false),
       stream_info_(dispatcher_.timeSource(), socket_->connectionInfoProviderSharedPtr()) {
@@ -903,6 +921,15 @@ ClientConnectionImpl::ClientConnectionImpl(
 
       // Trigger a write event to close this connection out-of-band.
       ioHandle().activateFileEvents(Event::FileReadyType::Write);
+    }
+  }
+
+  if (transport_options) {
+    for (const auto& object : transport_options->downstreamSharedFilterStateObjects()) {
+      // This does not throw as all objects are distinctly named and the stream info is empty.
+      stream_info_.filterState()->setData(object.name_, object.data_, object.state_type_,
+                                          StreamInfo::FilterState::LifeSpan::Connection,
+                                          object.stream_sharing_);
     }
   }
 }

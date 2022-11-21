@@ -96,7 +96,7 @@ public:
   MOCK_METHOD(HealthCheckHostMonitor&, healthChecker, (), (const));
   MOCK_METHOD(const std::string&, hostnameForHealthChecks, (), (const));
   MOCK_METHOD(const std::string&, hostname, (), (const));
-  MOCK_METHOD(Network::TransportSocketFactory&, transportSocketFactory, (), (const));
+  MOCK_METHOD(Network::UpstreamTransportSocketFactory&, transportSocketFactory, (), (const));
   MOCK_METHOD(HostStats&, stats, (), (const));
   MOCK_METHOD(LoadMetricStats&, loadMetricStats, (), (const));
   MOCK_METHOD(const envoy::config::core::v3::Locality&, locality, (), (const));
@@ -114,7 +114,7 @@ public:
   Network::Address::InstanceConstSharedPtr address_;
   testing::NiceMock<Outlier::MockDetectorHostMonitor> outlier_detector_;
   testing::NiceMock<MockHealthCheckHostMonitor> health_checker_;
-  Network::TransportSocketFactoryPtr socket_factory_;
+  Network::UpstreamTransportSocketFactoryPtr socket_factory_;
   testing::NiceMock<MockClusterInfo> cluster_;
   HostStats stats_;
   LoadMetricStatsImpl load_metric_stats_;
@@ -163,6 +163,11 @@ public:
     return locality_zone_stat_name_->statName();
   }
 
+  bool disableActiveHealthCheck() const override { return disable_active_health_check_; }
+  void setDisableActiveHealthCheck(bool disable_active_health_check) override {
+    disable_active_health_check_ = disable_active_health_check;
+  }
+
   MOCK_METHOD(Network::Address::InstanceConstSharedPtr, address, (), (const));
   MOCK_METHOD(const std::vector<Network::Address::InstanceConstSharedPtr>&, addressList, (),
               (const));
@@ -185,10 +190,11 @@ public:
   MOCK_METHOD(void, healthFlagClear, (HealthFlag flag));
   MOCK_METHOD(bool, healthFlagGet, (HealthFlag flag), (const));
   MOCK_METHOD(void, healthFlagSet, (HealthFlag flag));
-  MOCK_METHOD(Host::Health, health, (), (const));
+  MOCK_METHOD(Host::Health, coarseHealth, (), (const));
+  MOCK_METHOD(Host::HealthStatus, healthStatus, (), (const));
   MOCK_METHOD(const std::string&, hostnameForHealthChecks, (), (const));
   MOCK_METHOD(const std::string&, hostname, (), (const));
-  MOCK_METHOD(Network::TransportSocketFactory&, transportSocketFactory, (), (const));
+  MOCK_METHOD(Network::UpstreamTransportSocketFactory&, transportSocketFactory, (), (const));
   MOCK_METHOD(Outlier::DetectorHostMonitor&, outlierDetector, (), (const));
   MOCK_METHOD(void, setHealthChecker_, (HealthCheckHostMonitorPtr & health_checker));
   MOCK_METHOD(void, setOutlierDetector_, (Outlier::DetectorHostMonitorPtr & outlier_detector));
@@ -197,7 +203,8 @@ public:
   MOCK_METHOD(uint32_t, weight, (), (const));
   MOCK_METHOD(void, weight, (uint32_t new_weight));
   MOCK_METHOD(bool, used, (), (const));
-  MOCK_METHOD(void, used, (bool new_used));
+  MOCK_METHOD(HostHandlePtr, acquireHandle, (), (const));
+
   MOCK_METHOD(const envoy::config::core::v3::Locality&, locality, (), (const));
   MOCK_METHOD(uint32_t, priority, (), (const));
   MOCK_METHOD(void, priority, (uint32_t));
@@ -205,12 +212,13 @@ public:
   MOCK_METHOD(MonotonicTime, creationTime, (), (const));
 
   testing::NiceMock<MockClusterInfo> cluster_;
-  Network::TransportSocketFactoryPtr socket_factory_;
+  Network::UpstreamTransportSocketFactoryPtr socket_factory_;
   testing::NiceMock<Outlier::MockDetectorHostMonitor> outlier_detector_;
   HostStats stats_;
   LoadMetricStatsImpl load_metric_stats_;
   mutable Stats::TestUtil::TestSymbolTable symbol_table_;
   mutable std::unique_ptr<Stats::StatNameManagedStorage> locality_zone_stat_name_;
+  bool disable_active_health_check_ = false;
 };
 
 } // namespace Upstream

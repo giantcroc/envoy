@@ -84,6 +84,19 @@ TEST_P(MultiplexedUpstreamIntegrationTest, GrpcRetry) { testGrpcRetry(); }
 
 TEST_P(MultiplexedUpstreamIntegrationTest, Trailers) { testTrailers(1024, 2048, true, true); }
 
+TEST_P(MultiplexedUpstreamIntegrationTest, RouterRequestAndResponseWithTcpKeepalive) {
+  config_helper_.addConfigModifier([](envoy::config::bootstrap::v3::Bootstrap& bootstrap) {
+    auto keepalive = bootstrap.mutable_static_resources()
+                         ->mutable_clusters(0)
+                         ->mutable_upstream_connection_options()
+                         ->mutable_tcp_keepalive();
+    keepalive->mutable_keepalive_probes()->set_value(4);
+    keepalive->mutable_keepalive_time()->set_value(7);
+    keepalive->mutable_keepalive_interval()->set_value(1);
+  });
+  testRouterRequestAndResponseWithBody(1024, 512, false);
+}
+
 TEST_P(MultiplexedUpstreamIntegrationTest, TestSchemeAndXFP) {
   autonomous_upstream_ = true;
   initialize();
@@ -161,6 +174,9 @@ void MultiplexedUpstreamIntegrationTest::bidirectionalStreaming(uint32_t bytes) 
   EXPECT_EQ(
       "1",
       response->headers().get(Http::LowerCaseString("num_streams"))[0]->value().getStringView());
+  EXPECT_EQ(
+      fake_upstreams_[0]->localAddress()->asString(),
+      response->headers().get(Http::LowerCaseString("remote_address"))[0]->value().getStringView());
 }
 
 TEST_P(MultiplexedUpstreamIntegrationTest, BidirectionalStreaming) { bidirectionalStreaming(1024); }
@@ -852,14 +868,13 @@ public:
   }
   std::string name() const override { return "envoy.quic.crypto_stream.server.fail_handshake"; }
 
-  std::unique_ptr<quic::QuicCryptoServerStreamBase>
-  createEnvoyQuicCryptoServerStream(const quic::QuicCryptoServerConfig* crypto_config,
-                                    quic::QuicCompressedCertsCache* /*compressed_certs_cache*/,
-                                    quic::QuicSession* session,
-                                    quic::QuicCryptoServerStreamBase::Helper* /*helper*/,
-                                    Envoy::OptRef<const Envoy::Network::TransportSocketFactory>
-                                    /*transport_socket_factory*/,
-                                    Envoy::Event::Dispatcher& /*dispatcher*/) override {
+  std::unique_ptr<quic::QuicCryptoServerStreamBase> createEnvoyQuicCryptoServerStream(
+      const quic::QuicCryptoServerConfig* crypto_config,
+      quic::QuicCompressedCertsCache* /*compressed_certs_cache*/, quic::QuicSession* session,
+      quic::QuicCryptoServerStreamBase::Helper* /*helper*/,
+      Envoy::OptRef<const Envoy::Network::DownstreamTransportSocketFactory>
+      /*transport_socket_factory*/,
+      Envoy::Event::Dispatcher& /*dispatcher*/) override {
     ASSERT(session->connection()->version().handshake_protocol == quic::PROTOCOL_TLS1_3);
     return std::make_unique<QuicCustomTlsServerHandshaker>(session, crypto_config, fail_handshake_);
   }

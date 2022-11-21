@@ -11,6 +11,7 @@
 #include "source/common/config/utility.h"
 #include "source/common/filter/config_discovery_impl.h"
 #include "source/common/json/json_loader.h"
+#include "source/common/network/filter_matcher.h"
 
 #include "test/integration/filters/add_body_filter.pb.h"
 #include "test/integration/filters/test_listener_filter.h"
@@ -23,7 +24,6 @@
 #include "test/mocks/upstream/mocks.h"
 #include "test/test_common/printers.h"
 #include "test/test_common/simulated_time_system.h"
-#include "test/test_common/test_runtime.h"
 #include "test/test_common/utility.h"
 
 #include "absl/strings/substitute.h"
@@ -103,7 +103,8 @@ public:
     }
 
     return filter_config_provider_manager_->createDynamicFilterConfigProvider(
-        config_source, name, factory_context_, "xds.", last_filter_config, getFilterType());
+        config_source, name, factory_context_.getServerFactoryContext(), factory_context_,
+        last_filter_config, getFilterType(), getMatcher());
   }
 
   void setup(bool warm = true, bool default_configuration = false, bool last_filter_config = true) {
@@ -157,6 +158,7 @@ public:
   }
 
   virtual const std::string getFilterType() const PURE;
+  virtual const Network::ListenerFilterMatcherSharedPtr getMatcher() const { return nullptr; }
   virtual const std::string getConfigReloadCounter() const PURE;
   virtual const std::string getConfigFailCounter() const PURE;
 
@@ -168,7 +170,7 @@ public:
 
 // HTTP filter test
 class HttpFilterConfigDiscoveryImplTest
-    : public FilterConfigDiscoveryImplTest<Http::FilterFactoryCb,
+    : public FilterConfigDiscoveryImplTest<NamedHttpFilterFactoryCb,
                                            Server::Configuration::FactoryContext,
                                            HttpFilterConfigProviderManagerImpl,
                                            envoy::extensions::filters::http::router::v3::Router> {
@@ -276,32 +278,6 @@ TYPED_TEST(FilterConfigDiscoveryImplTestParameter, Basic) {
         0UL,
         config_discovery_test.scope_.counter(config_discovery_test.getConfigFailCounter()).value());
   }
-}
-
-TYPED_TEST(FilterConfigDiscoveryImplTestParameter, BasicDeprecatedStatPrefix) {
-  TestScopedRuntime scoped_runtime;
-  scoped_runtime.mergeValues({{"envoy.reloadable_features.top_level_ecds_stats", "false"}});
-
-  InSequence s;
-  TypeParam config_discovery_test;
-  config_discovery_test.setup();
-  EXPECT_EQ("foo", config_discovery_test.provider_->name());
-  EXPECT_EQ(absl::nullopt, config_discovery_test.provider_->config());
-
-  const auto response = config_discovery_test.createResponse("1", "foo");
-  const auto decoded_resources =
-      TestUtility::decodeResources<envoy::config::core::v3::TypedExtensionConfig>(response);
-
-  EXPECT_CALL(config_discovery_test.init_watcher_, ready());
-  config_discovery_test.callbacks_->onConfigUpdate(decoded_resources.refvec_,
-                                                   response.version_info());
-  EXPECT_NE(absl::nullopt, config_discovery_test.provider_->config());
-  EXPECT_EQ(1UL,
-            config_discovery_test.scope_.counter("xds.extension_config_discovery.foo.config_reload")
-                .value());
-  EXPECT_EQ(0UL,
-            config_discovery_test.scope_.counter("xds.extension_config_discovery.foo.config_fail")
-                .value());
 }
 
 TYPED_TEST(FilterConfigDiscoveryImplTestParameter, ConfigFailed) {
@@ -455,8 +431,9 @@ TYPED_TEST(FilterConfigDiscoveryImplTestParameter, WrongDefaultConfig) {
       "type.googleapis.com/test.integration.filters.Bogus");
   EXPECT_THROW_WITH_MESSAGE(
       config_discovery_test.filter_config_provider_manager_->createDynamicFilterConfigProvider(
-          config_source, "foo", config_discovery_test.factory_context_, "xds.", true,
-          config_discovery_test.getFilterType()),
+          config_source, "foo", config_discovery_test.factory_context_.getServerFactoryContext(),
+          config_discovery_test.factory_context_, true, config_discovery_test.getFilterType(),
+          config_discovery_test.getMatcher()),
       EnvoyException,
       "Error: cannot find filter factory foo for default filter "
       "configuration with type URL "
@@ -492,9 +469,41 @@ TYPED_TEST(FilterConfigDiscoveryImplTestParameter, TerminalFilterInvalid) {
       EnvoyException,
       "Error: terminal filter named foo of type envoy.filters.http.router must be the last filter "
       "in a http filter chain.");
-  EXPECT_EQ(0UL,
-            config_discovery_test.scope_.counter("xds.extension_config_discovery.foo.config_reload")
-                .value());
+  EXPECT_EQ(
+      0UL,
+      config_discovery_test.scope_.counter("extension_config_discovery.foo.config_reload").value());
+}
+
+// TCP listener filter matcher test.
+class TcpListenerFilterConfigMatcherTest : public testing::Test,
+                                           public TcpListenerFilterConfigDiscoveryImplTest {
+public:
+  TcpListenerFilterConfigMatcherTest() : matcher_(nullptr) {}
+  const Network::ListenerFilterMatcherSharedPtr getMatcher() const override { return matcher_; }
+  void setMatcher(Network::ListenerFilterMatcherSharedPtr matcher) { matcher_ = matcher; }
+
+  Network::ListenerFilterMatcherSharedPtr matcher_;
+};
+
+// Setup matcher as nullptr
+TEST_F(TcpListenerFilterConfigMatcherTest, TcpListenerFilterNullMatcher) {
+  // By default, getMatcher() returns nullptr.
+  setup();
+  // Verify the listener_filter_matcher_ stored in provider_ matches with the configuration.
+  EXPECT_EQ(provider_->getListenerFilterMatcher(), nullptr);
+  EXPECT_CALL(init_watcher_, ready());
+}
+
+// Setup matcher as any matcher.
+TEST_F(TcpListenerFilterConfigMatcherTest, TcpListenerFilterAnyMatcher) {
+  envoy::config::listener::v3::ListenerFilterChainMatchPredicate pred;
+  pred.set_any_match(true);
+  Network::ListenerFilterMatcherSharedPtr matcher =
+      Network::ListenerFilterMatcherBuilder::buildListenerFilterMatcher(pred);
+  setMatcher(matcher);
+  setup();
+  EXPECT_EQ(provider_->getListenerFilterMatcher(), matcher);
+  EXPECT_CALL(init_watcher_, ready());
 }
 
 } // namespace

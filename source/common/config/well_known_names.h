@@ -47,6 +47,8 @@ public:
   const std::string CANARY = "canary";
   // Key in envoy.lb filter namespace for the key to use to hash an endpoint.
   const std::string HASH_KEY = "hash_key";
+  // Key in envoy.lb filter namespace for providing fallback metadata
+  const std::string FALLBACK_LIST = "fallback_list";
 };
 
 using MetadataEnvoyLbKeys = ConstSingleton<MetadataEnvoyLbKeyValues>;
@@ -103,6 +105,10 @@ public:
   const std::string MONGO_CALLSITE = "envoy.mongo_callsite";
   // Stats prefix for the Ratelimit network filter
   const std::string RATELIMIT_PREFIX = "envoy.ratelimit_prefix";
+  // Stats prefix for the Local Ratelimit network filter
+  const std::string LOCAL_HTTP_RATELIMIT_PREFIX = "envoy.local_http_ratelimit_prefix";
+  // Stats prefix for the Local Ratelimit network filter
+  const std::string LOCAL_NETWORK_RATELIMIT_PREFIX = "envoy.local_network_ratelimit_prefix";
   // Stats prefix for the TCP Proxy network filter
   const std::string TCP_PREFIX = "envoy.tcp_prefix";
   // Stats prefix for the UDP Proxy network filter
@@ -129,8 +135,14 @@ public:
   const std::string RESPONSE_CODE_CLASS = "envoy.response_code_class";
   // Route config name for RDS updates
   const std::string RDS_ROUTE_CONFIG = "envoy.rds_route_config";
+  // Request route given by the Router http filter
+  const std::string ROUTE = "envoy.route";
   // Listener manager worker id
   const std::string WORKER_ID = "envoy.worker_id";
+  // Stats prefix for the Thrift Proxy network filter
+  const std::string THRIFT_PREFIX = "envoy.thrift_prefix";
+  // Stats prefix for the Redis Proxy network filter
+  const std::string REDIS_PREFIX = "envoy.redis_prefix";
 
   // Mapping from the names above to their respective regex strings.
   const std::vector<std::pair<std::string, std::string>> name_regex_pairs_;

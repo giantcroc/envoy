@@ -52,9 +52,16 @@ public:
     EXPECT_CALL(mockHost(), transportSocketFactory()).WillRepeatedly(testing::ReturnRef(*factory_));
     EXPECT_CALL(mockHost().cluster_, connectTimeout())
         .WillRepeatedly(Return(std::chrono::milliseconds(10000)));
-
     new Event::MockSchedulableCallback(&dispatcher_);
-    Network::ConnectionSocket::OptionsSharedPtr options;
+    Network::ConnectionSocket::OptionsSharedPtr options =
+        std::make_shared<Network::Socket::Options>();
+    options->push_back(socket_option_);
+    ON_CALL(*mockHost().cluster_.upstream_local_address_selector_, getUpstreamLocalAddress(_, _))
+        .WillByDefault(Invoke([](const Network::Address::InstanceConstSharedPtr&,
+                                 const Network::ConnectionSocket::OptionsSharedPtr& socket_options)
+                                  -> Upstream::UpstreamLocalAddress {
+          return Upstream::UpstreamLocalAddress({nullptr, socket_options});
+        }));
     Network::TransportSocketOptionsConstSharedPtr transport_options;
     pool_ = allocateConnPool(dispatcher_, random_, host_, Upstream::ResourcePriority::Default,
                              options, transport_options, state_, quic_stat_names_, {}, store_,
@@ -79,6 +86,7 @@ public:
   Quic::QuicStatNames quic_stat_names_{store_.symbolTable()};
   std::unique_ptr<Http3ConnPoolImpl> pool_;
   MockPoolConnectResultCallback connect_result_callback_;
+  std::shared_ptr<Network::MockSocketOption> socket_option_{new Network::MockSocketOption()};
 };
 
 class MockQuicClientTransportSocketFactory : public Quic::QuicClientTransportSocketFactory {
@@ -149,7 +157,21 @@ TEST_F(Http3ConnPoolImplTest, CreationAndNewStream) {
 
   MockResponseDecoder decoder;
   ConnPoolCallbacks callbacks;
-
+  mockHost().cluster_.cluster_socket_options_ = std::make_shared<Network::Socket::Options>();
+  std::shared_ptr<Network::MockSocketOption> cluster_socket_option{new Network::MockSocketOption()};
+  mockHost().cluster_.cluster_socket_options_->push_back(cluster_socket_option);
+  EXPECT_CALL(*mockHost().cluster_.upstream_local_address_selector_, getUpstreamLocalAddress(_, _))
+      .WillOnce(Invoke([&](const Network::Address::InstanceConstSharedPtr&,
+                           const Network::ConnectionSocket::OptionsSharedPtr& socket_options)
+                           -> Upstream::UpstreamLocalAddress {
+        Network::ConnectionSocket::OptionsSharedPtr options =
+            std::make_shared<Network::ConnectionSocket::Options>();
+        Network::Socket::appendOptions(options, mockHost().cluster_.cluster_socket_options_);
+        Network::Socket::appendOptions(options, socket_options);
+        return Upstream::UpstreamLocalAddress({nullptr, options});
+      }));
+  EXPECT_CALL(*cluster_socket_option, setOption(_, _)).Times(3u);
+  EXPECT_CALL(*socket_option_, setOption(_, _)).Times(3u);
   auto* async_connect_callback = new NiceMock<Event::MockSchedulableCallback>(&dispatcher_);
   ConnectionPool::Cancellable* cancellable = pool_->newStream(decoder, callbacks,
                                                               {/*can_send_early_data_=*/false,
@@ -182,6 +204,7 @@ TEST_F(Http3ConnPoolImplTest, NewAndCancelStreamBeforeConnect) {
 
   MockResponseDecoder decoder;
   ConnPoolCallbacks callbacks;
+  EXPECT_CALL(*socket_option_, setOption(_, _)).Times(2u);
   auto* async_connect_callback = new NiceMock<Event::MockSchedulableCallback>(&dispatcher_);
   ConnectionPool::Cancellable* cancellable = pool_->newStream(decoder, callbacks,
                                                               {/*can_send_early_data_=*/false,
@@ -212,6 +235,7 @@ TEST_F(Http3ConnPoolImplTest, NewAndDrainClientBeforeConnect) {
 
   MockResponseDecoder decoder;
   ConnPoolCallbacks callbacks;
+  EXPECT_CALL(*socket_option_, setOption(_, _)).Times(3u);
   auto* async_connect_callback = new NiceMock<Event::MockSchedulableCallback>(&dispatcher_);
   ConnectionPool::Cancellable* cancellable = pool_->newStream(decoder, callbacks,
                                                               {/*can_send_early_data_=*/false,

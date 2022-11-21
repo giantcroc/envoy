@@ -7,6 +7,7 @@
 
 #include "source/common/common/fmt.h"
 #include "source/common/protobuf/utility.h"
+#include "source/common/stream_info/stream_id_provider_impl.h"
 #include "source/common/stream_info/stream_info_impl.h"
 #include "source/common/stream_info/utility.h"
 
@@ -78,6 +79,10 @@ TEST_F(StreamInfoImplTest, TimingTest) {
   EXPECT_FALSE(timing.lastDownstreamTxByteSent());
   info.downstreamTiming().onLastDownstreamTxByteSent(test_time_.timeSystem());
   dur = checkDuration(dur, timing.lastDownstreamTxByteSent());
+
+  EXPECT_FALSE(timing.downstreamHandshakeComplete());
+  info.downstreamTiming().onDownstreamHandshakeComplete(test_time_.timeSystem());
+  dur = checkDuration(dur, timing.downstreamHandshakeComplete());
 
   EXPECT_FALSE(info.requestComplete());
   info.onRequestComplete();
@@ -219,6 +224,34 @@ TEST_F(StreamInfoImplTest, MiscSettersAndGetters) {
   }
 }
 
+TEST_F(StreamInfoImplTest, SetFrom) {
+  StreamInfoImpl s1(Http::Protocol::Http2, test_time_.timeSystem(), nullptr);
+
+  s1.addBytesReceived(1);
+  s1.downstreamTiming().onLastDownstreamRxByteReceived(test_time_.timeSystem());
+
+#ifdef __clang__
+#if defined(__linux__)
+#if defined(__has_feature) && !(__has_feature(thread_sanitizer))
+  ASSERT_TRUE(sizeof(s1) == 784 || sizeof(s1) == 800 || sizeof(s1) == 808 || sizeof(s1) == 824)
+      << "If adding fields to StreamInfoImpl, please check to see if you "
+         "need to add them to setFromForRecreateStream! Current size "
+      << sizeof(s1);
+#endif
+#endif
+#endif
+
+  StreamInfoImpl s2(Http::Protocol::Http11, test_time_.timeSystem(), nullptr);
+  s2.setFromForRecreateStream(s1);
+  EXPECT_EQ(s1.startTime(), s2.startTime());
+  EXPECT_EQ(s1.startTimeMonotonic(), s2.startTimeMonotonic());
+  EXPECT_EQ(s1.downstreamTiming().lastDownstreamRxByteReceived(),
+            s2.downstreamTiming().lastDownstreamRxByteReceived());
+  EXPECT_EQ(s1.protocol(), s2.protocol());
+  EXPECT_EQ(s1.bytesReceived(), s2.bytesReceived());
+  EXPECT_EQ(s1.getDownstreamBytesMeter(), s2.getDownstreamBytesMeter());
+}
+
 TEST_F(StreamInfoImplTest, DynamicMetadataTest) {
   StreamInfoImpl stream_info(Http::Protocol::Http2, test_time_.timeSystem(), nullptr);
 
@@ -271,9 +304,20 @@ TEST_F(StreamInfoImplTest, RequestHeadersTest) {
   EXPECT_EQ(&headers, stream_info.getRequestHeaders());
 }
 
-TEST_F(StreamInfoImplTest, DefaultRequestIDExtensionTest) {
+TEST_F(StreamInfoImplTest, DefaultStreamIdProvider) {
   StreamInfoImpl stream_info(test_time_.timeSystem(), nullptr);
-  EXPECT_EQ(nullptr, stream_info.getRequestIDProvider());
+  EXPECT_EQ(false, stream_info.getStreamIdProvider().has_value());
+}
+
+TEST_F(StreamInfoImplTest, StreamIdProvider) {
+  StreamInfoImpl stream_info(test_time_.timeSystem(), nullptr);
+  stream_info.setStreamIdProvider(
+      std::make_shared<StreamIdProviderImpl>("a121e9e1-feae-4136-9e0e-6fac343d56c9"));
+
+  EXPECT_EQ(true, stream_info.getStreamIdProvider().has_value());
+  EXPECT_EQ("a121e9e1-feae-4136-9e0e-6fac343d56c9",
+            stream_info.getStreamIdProvider().value().get().toStringView().value());
+  EXPECT_EQ(true, stream_info.getStreamIdProvider().value().get().toInteger().has_value());
 }
 
 TEST_F(StreamInfoImplTest, Details) {

@@ -12,6 +12,7 @@ HTTP filters
   aws_request_signing_filter
   bandwidth_limit_filter
   buffer_filter
+  cache_filter
   cdn_loop_filter
   compressor_filter
   composite_filter
@@ -49,4 +50,5 @@ HTTP filters
   stateful_session_filter
   sxg_filter
   tap_filter
+  upstream_codec_filter
   wasm_filter
