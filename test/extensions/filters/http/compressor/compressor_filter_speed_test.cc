@@ -501,7 +501,7 @@ static void compressFullWithZstd(benchmark::State& state) {
   const auto& params = zstd_compression_params[idx];
 
   for (auto _ : state) { // NOLINT
-    std::vector<Buffer::OwnedImpl> chunks = generateChunks(1, 122880);
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(1, TestDataSize);
     compressWith(CompressorLibs::Zstd, std::move(chunks), params, decoder_callbacks, state);
   }
 }
@@ -517,7 +517,7 @@ static void compressChunks16384WithZstd(benchmark::State& state) {
   const auto& params = zstd_compression_params[idx];
 
   for (auto _ : state) { // NOLINT
-    std::vector<Buffer::OwnedImpl> chunks = generateChunks(7, 16384);
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(TestDataSize/16384, 16384);
     compressWith(CompressorLibs::Zstd, std::move(chunks), params, decoder_callbacks, state);
   }
 }
@@ -533,7 +533,7 @@ static void compressChunks8192WithZstd(benchmark::State& state) {
   const auto& params = zstd_compression_params[idx];
 
   for (auto _ : state) { // NOLINT
-    std::vector<Buffer::OwnedImpl> chunks = generateChunks(15, 8192);
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(TestDataSize/8192, 8192);
     compressWith(CompressorLibs::Zstd, std::move(chunks), params, decoder_callbacks, state);
   }
 }
@@ -549,7 +549,7 @@ static void compressChunks4096WithZstd(benchmark::State& state) {
   const auto& params = zstd_compression_params[idx];
 
   for (auto _ : state) { // NOLINT
-    std::vector<Buffer::OwnedImpl> chunks = generateChunks(30, 4096);
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(TestDataSize/4096, 4096);
     compressWith(CompressorLibs::Zstd, std::move(chunks), params, decoder_callbacks, state);
   }
 }
@@ -565,7 +565,7 @@ static void compressChunks1024WithZstd(benchmark::State& state) {
   const auto& params = zstd_compression_params[idx];
 
   for (auto _ : state) { // NOLINT
-    std::vector<Buffer::OwnedImpl> chunks = generateChunks(120, 1024);
+    std::vector<Buffer::OwnedImpl> chunks = generateChunks(TestDataSize/1024, 1024);
     compressWith(CompressorLibs::Zstd, std::move(chunks), params, decoder_callbacks, state);
   }
 }
