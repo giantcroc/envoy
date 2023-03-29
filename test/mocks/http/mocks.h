@@ -38,8 +38,6 @@
 #include "absl/strings/str_join.h"
 #include "gmock/gmock.h"
 
-using testing::Return;
-
 namespace Envoy {
 namespace Http {
 
@@ -421,7 +419,7 @@ public:
   MOCK_METHOD(LocalErrorStatus, onLocalReply, (const LocalReplyData&));
 
   // Http::MockStreamEncoderFilter
-  MOCK_METHOD(FilterHeadersStatus, encode1xxHeaders, (ResponseHeaderMap & headers));
+  MOCK_METHOD(Filter1xxHeadersStatus, encode1xxHeaders, (ResponseHeaderMap & headers));
   MOCK_METHOD(FilterHeadersStatus, encodeHeaders, (ResponseHeaderMap & headers, bool end_stream));
   MOCK_METHOD(FilterDataStatus, encodeData, (Buffer::Instance & data, bool end_stream));
   MOCK_METHOD(FilterTrailersStatus, encodeTrailers, (ResponseTrailerMap & trailers));
@@ -452,7 +450,7 @@ public:
   MOCK_METHOD(void, decodeComplete, ());
 
   // Http::MockStreamEncoderFilter
-  MOCK_METHOD(FilterHeadersStatus, encode1xxHeaders, (ResponseHeaderMap & headers));
+  MOCK_METHOD(Filter1xxHeadersStatus, encode1xxHeaders, (ResponseHeaderMap & headers));
   MOCK_METHOD(ResponseHeaderMapOptRef, informationalHeaders, (), (const));
   MOCK_METHOD(FilterHeadersStatus, encodeHeaders, (ResponseHeaderMap & headers, bool end_stream));
   MOCK_METHOD(ResponseHeaderMapOptRef, responseHeaders, (), (const));
@@ -479,10 +477,14 @@ public:
                 const RequestOptions& args) override {
     return send_(request, callbacks, args);
   }
-
+  OngoingRequest* startRequest(RequestHeaderMapPtr&& headers, Callbacks& callbacks,
+                               const RequestOptions& args) override {
+    return startRequest_(headers, callbacks, args);
+  }
   MOCK_METHOD(Request*, send_,
               (RequestMessagePtr & request, Callbacks& callbacks, const RequestOptions& args));
-
+  MOCK_METHOD(OngoingRequest*, startRequest_,
+              (RequestHeaderMapPtr & request, Callbacks& callbacks, const RequestOptions& args));
   MOCK_METHOD(Stream*, start, (StreamCallbacks & callbacks, const StreamOptions& args));
 
   MOCK_METHOD(Event::Dispatcher&, dispatcher, ());
@@ -525,7 +527,7 @@ public:
   MOCK_METHOD(void, onReset, ());
 };
 
-class MockAsyncClientRequest : public AsyncClient::Request {
+class MockAsyncClientRequest : public virtual AsyncClient::Request {
 public:
   MockAsyncClientRequest(MockAsyncClient* client);
   ~MockAsyncClientRequest() override;
@@ -535,7 +537,7 @@ public:
   MockAsyncClient* client_;
 };
 
-class MockAsyncClientStream : public AsyncClient::Stream {
+class MockAsyncClientStream : public virtual AsyncClient::Stream {
 public:
   MockAsyncClientStream();
   ~MockAsyncClientStream() override;
@@ -545,6 +547,27 @@ public:
   MOCK_METHOD(void, sendTrailers, (RequestTrailerMap & trailers));
   MOCK_METHOD(void, reset, ());
   MOCK_METHOD(bool, isAboveWriteBufferHighWatermark, (), (const));
+  void setDestructorCallback(AsyncClient::StreamDestructorCallbacks callback) override {
+    destructor_callback_ = callback;
+  }
+  void removeDestructorCallback() override { destructor_callback_.reset(); }
+  MOCK_METHOD(void, setWatermarkCallbacks, (DecoderFilterWatermarkCallbacks & callback),
+              (override));
+  MOCK_METHOD(void, removeWatermarkCallbacks, (), (override));
+
+private:
+  absl::optional<AsyncClient::StreamDestructorCallbacks> destructor_callback_;
+};
+
+class MockAsyncClientOngoingRequest : public virtual AsyncClient::OngoingRequest,
+                                      public MockAsyncClientStream,
+                                      public MockAsyncClientRequest {
+public:
+  MockAsyncClientOngoingRequest(MockAsyncClient* client) : MockAsyncClientRequest(client) {}
+  void captureAndSendTrailers(RequestTrailerMapPtr&& trailers) override {
+    return captureAndSendTrailers_(*trailers);
+  }
+  MOCK_METHOD(void, captureAndSendTrailers_, (RequestTrailerMap & trailers), ());
 };
 
 class MockDownstreamWatermarkCallbacks : public DownstreamWatermarkCallbacks {
@@ -561,6 +584,7 @@ public:
     ON_CALL(*this, preserveExternalRequestId()).WillByDefault(testing::Return(false));
     ON_CALL(*this, alwaysSetRequestIdInResponse()).WillByDefault(testing::Return(false));
     ON_CALL(*this, schemeToSet()).WillByDefault(testing::ReturnRef(scheme_));
+    ON_CALL(*this, addProxyProtocolConnectionState()).WillByDefault(testing::Return(true));
   }
 
   // Http::ConnectionManagerConfig
@@ -571,6 +595,8 @@ public:
 
   MOCK_METHOD(const RequestIDExtensionSharedPtr&, requestIDExtension, ());
   MOCK_METHOD(const std::list<AccessLog::InstanceSharedPtr>&, accessLogs, ());
+  MOCK_METHOD(bool, flushAccessLogOnNewRequest, ());
+  MOCK_METHOD(const absl::optional<std::chrono::milliseconds>&, accessLogFlushInterval, ());
   MOCK_METHOD(ServerConnection*, createCodec_,
               (Network::Connection&, const Buffer::Instance&, ServerConnectionCallbacks&));
   MOCK_METHOD(DateProvider&, dateProvider, ());
@@ -629,13 +655,18 @@ public:
               pathWithEscapedSlashesAction, (), (const));
   MOCK_METHOD(const std::vector<Http::OriginalIPDetectionSharedPtr>&, originalIpDetectionExtensions,
               (), (const));
+  const std::vector<Http::EarlyHeaderMutationPtr>& earlyHeaderMutationExtensions() const override {
+    return early_header_mutation_extensions_;
+  }
   MOCK_METHOD(uint64_t, maxRequestsPerConnection, (), (const));
   MOCK_METHOD(const HttpConnectionManagerProto::ProxyStatusConfig*, proxyStatusConfig, (), (const));
-  MOCK_METHOD(HeaderValidatorPtr, makeHeaderValidator,
-              (Protocol protocol, StreamInfo::StreamInfo& stream_info));
+  MOCK_METHOD(HeaderValidatorPtr, makeHeaderValidator, (Protocol protocol));
+  MOCK_METHOD(bool, appendXForwardedPort, (), (const));
+  MOCK_METHOD(bool, addProxyProtocolConnectionState, (), (const));
 
   std::unique_ptr<Http::InternalAddressConfig> internal_address_config_ =
       std::make_unique<DefaultInternalAddressConfig>();
+  std::vector<Http::EarlyHeaderMutationPtr> early_header_mutation_extensions_;
   absl::optional<std::string> scheme_;
 };
 

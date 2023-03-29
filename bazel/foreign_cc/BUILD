@@ -98,23 +98,6 @@ configure_make(
 )
 
 configure_make(
-    name = "moonjit",
-    configure_command = "build.py",
-    env = select({
-        # This shouldn't be needed! See
-        # https://github.com/envoyproxy/envoy/issues/6084
-        # TODO(htuch): Remove when #6084 is fixed
-        "//bazel:asan_build": {"ENVOY_CONFIG_ASAN": "1"},
-        "//bazel:msan_build": {"ENVOY_CONFIG_MSAN": "1"},
-        "//conditions:default": {},
-    }),
-    lib_source = "@com_github_moonjit_moonjit//:all",
-    out_include_dir = "include/moonjit-2.2",
-    out_static_libs = ["libluajit-5.1.a"],
-    tags = ["skip_on_windows"],
-)
-
-configure_make(
     name = "colm",
     autogen = True,
     configure_in_place = True,
@@ -497,15 +480,17 @@ envoy_cmake(
 envoy_cmake(
     name = "wamr",
     cache_entries = {
-        "WAMR_BUILD_INTERP": "1",
-        "WAMR_BUILD_FAST_INTERP": "1",
-        "WAMR_BUILD_JIT": "0",
-        "WAMR_BUILD_LAZY_JIT": "0",
         "WAMR_BUILD_AOT": "0",
-        "WAMR_BUILD_SIMD": "0",
-        "WAMR_BUILD_MULTI_MODULE": "1",
+        "WAMR_BUILD_FAST_INTERP": "1",
+        "WAMR_BUILD_INTERP": "1",
+        "WAMR_BUILD_JIT": "0",
         "WAMR_BUILD_LIBC_WASI": "0",
+        "WAMR_BUILD_MULTI_MODULE": "0",
+        "WAMR_BUILD_SIMD": "0",
         "WAMR_BUILD_TAIL_CALL": "1",
+        "WAMR_BUILD_WASM_CACHE": "0",
+        "WAMR_DISABLE_HW_BOUND_CHECK": "0",
+        "WAMR_DISABLE_STACK_HW_BOUND_CHECK": "1",
     },
     lib_source = "@com_github_wamr//:all",
     out_static_libs = ["libvmlib.a"],

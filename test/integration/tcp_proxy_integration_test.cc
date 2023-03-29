@@ -48,7 +48,7 @@ INSTANTIATE_TEST_SUITE_P(IpVersions, TcpProxyIntegrationTest,
                          testing::ValuesIn(TestEnvironment::getIpVersionsForTest()),
                          TestUtility::ipTestParamsToString);
 
-// Test upstream writing before downstream downstream does.
+// Test upstream writing before downstream does.
 TEST_P(TcpProxyIntegrationTest, TcpProxyUpstreamWritesFirst) {
   initialize();
   IntegrationTcpClientPtr tcp_client = makeTcpConnection(lookupPort("tcp_proxy"));
@@ -547,6 +547,55 @@ TEST_P(TcpProxyIntegrationTest, AccessLogUpstreamConnectFailure) {
   EXPECT_THAT(log_result, testing::StartsWith("delayed_connect_error:"));
 }
 
+TEST_P(TcpProxyIntegrationTest, AccessLogOnUpstreamConnect) {
+  std::string access_log_path = TestEnvironment::temporaryPath(
+      fmt::format("access_log{}{}.txt", version_ == Network::Address::IpVersion::v4 ? "v4" : "v6",
+                  TestUtility::uniqueFilename()));
+
+  setupByteMeterAccessLog();
+  config_helper_.addConfigModifier([&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void {
+    auto* listener = bootstrap.mutable_static_resources()->mutable_listeners(0);
+    auto* filter_chain = listener->mutable_filter_chains(0);
+    auto* config_blob = filter_chain->mutable_filters(0)->mutable_typed_config();
+
+    ASSERT_TRUE(config_blob->Is<envoy::extensions::filters::network::tcp_proxy::v3::TcpProxy>());
+    auto tcp_proxy_config =
+        MessageUtil::anyConvert<envoy::extensions::filters::network::tcp_proxy::v3::TcpProxy>(
+            *config_blob);
+
+    tcp_proxy_config.set_flush_access_log_on_connected(true);
+    auto* access_log = tcp_proxy_config.add_access_log();
+    access_log->set_name("accesslog");
+    envoy::extensions::access_loggers::file::v3::FileAccessLog access_log_config;
+    access_log_config.set_path(access_log_path);
+    access_log_config.mutable_log_format()->mutable_text_format_source()->set_inline_string(
+        "DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT=%DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT%");
+    access_log->mutable_typed_config()->PackFrom(access_log_config);
+    config_blob->PackFrom(tcp_proxy_config);
+  });
+
+  const std::string ip_regex =
+      (version_ == Network::Address::IpVersion::v4) ? R"EOF(127\.0\.0\.1)EOF" : R"EOF(::1)EOF";
+
+  initialize();
+  IntegrationTcpClientPtr tcp_client = makeTcpConnection(lookupPort("tcp_proxy"));
+  ASSERT_TRUE(tcp_client->write("hello"));
+  FakeRawConnectionPtr fake_upstream_connection;
+
+  ASSERT_TRUE(fake_upstreams_[0]->waitForRawConnection(fake_upstream_connection));
+  auto log_result = waitForAccessLog(access_log_path);
+  EXPECT_THAT(log_result,
+              MatchesRegex(fmt::format("DOWNSTREAM_REMOTE_ADDRESS_WITHOUT_PORT={}", ip_regex)));
+
+  ASSERT_TRUE(fake_upstream_connection->waitForData(5));
+  ASSERT_TRUE(tcp_client->write("", true));
+  ASSERT_TRUE(fake_upstream_connection->waitForHalfClose());
+  ASSERT_TRUE(fake_upstream_connection->write("", true));
+  ASSERT_TRUE(fake_upstream_connection->waitForDisconnect());
+  tcp_client->waitForDisconnect();
+  test_server_.reset();
+}
+
 // Make sure no bytes are logged when no data is sent.
 TEST_P(TcpProxyIntegrationTest, TcpProxyNoDataBytesMeter) {
   setupByteMeterAccessLog();
@@ -680,6 +729,47 @@ TEST_P(TcpProxyIntegrationTest, TestIdletimeoutWithNoData) {
   initialize();
   IntegrationTcpClientPtr tcp_client = makeTcpConnection(lookupPort("tcp_proxy"));
   tcp_client->waitForDisconnect();
+}
+
+TEST_P(TcpProxyIntegrationTest, TestPerClientIdletimeout) {
+  autonomous_upstream_ = true;
+
+  enableHalfClose(false);
+  config_helper_.addConfigModifier([&](envoy::config::bootstrap::v3::Bootstrap& bootstrap) -> void {
+    auto* static_resources = bootstrap.mutable_static_resources();
+    for (int i = 0; i < static_resources->clusters_size(); ++i) {
+      auto* cluster = bootstrap.mutable_static_resources()->mutable_clusters(i);
+      auto& cluster_protocol_options = *cluster->mutable_typed_extension_protocol_options();
+      envoy::extensions::upstreams::tcp::v3::TcpProtocolOptions tcp_options;
+      tcp_options.mutable_idle_timeout()->set_nanos(
+          std::chrono::duration_cast<std::chrono::nanoseconds>(std::chrono::milliseconds(100))
+              .count());
+      cluster_protocol_options["envoy.extensions.upstreams.tcp.v3.TcpProtocolOptions"].PackFrom(
+          tcp_options);
+
+      // two more connections which are going to be closed by the per-client idle timers
+      cluster->mutable_preconnect_policy()->mutable_predictive_preconnect_ratio()->set_value(2);
+
+      auto* load_assignment = cluster->mutable_load_assignment();
+      load_assignment->clear_endpoints();
+      for (int i = 0; i < 5; ++i) {
+        auto locality = load_assignment->add_endpoints();
+        locality->add_lb_endpoints()->mutable_endpoint()->MergeFrom(
+            ConfigHelper::buildEndpoint(Network::Test::getLoopbackAddressString(version_)));
+      }
+    }
+  });
+  setUpstreamCount(5);
+
+  initialize();
+  IntegrationTcpClientPtr tcp_client = makeTcpConnection(lookupPort("tcp_proxy"));
+  // Platforms could prevent ActiveTcpClient construction unless we explicitly wait for it.
+  test_server_->waitForCounterGe("cluster.cluster_0.upstream_cx_total", 1);
+
+  tcp_client->close();
+
+  // Two pre-connections are closed by idle timers.
+  test_server_->waitForCounterGe("cluster.cluster_0.upstream_cx_destroy", 2);
 }
 
 TEST_P(TcpProxyIntegrationTest, TestIdletimeoutWithLargeOutstandingData) {
@@ -1348,7 +1438,7 @@ void TcpProxySslIntegrationTest::sendAndReceiveTlsData(const std::string& data_t
 
   // Now send data downstream and make sure it arrives.
   ASSERT_TRUE(fake_upstream_connection_->write(data_to_send_downstream));
-  payload_reader_->set_data_to_wait_for(data_to_send_downstream);
+  payload_reader_->setDataToWaitFor(data_to_send_downstream);
   ssl_client_->dispatcher().run(Event::Dispatcher::RunType::Block);
 
   // Clean up.
@@ -1385,7 +1475,7 @@ TEST_P(TcpProxySslIntegrationTest, DownstreamHalfClose) {
 
   const std::string data("data");
   ASSERT_TRUE(fake_upstream_connection_->write(data, false));
-  payload_reader_->set_data_to_wait_for(data);
+  payload_reader_->setDataToWaitFor(data);
   ssl_client_->dispatcher().run(Event::Dispatcher::RunType::Block);
   EXPECT_FALSE(payload_reader_->readLastByte());
 
@@ -1570,4 +1660,5 @@ TEST_P(MysqlIntegrationTest, PreconnectWithTls) {
 INSTANTIATE_TEST_SUITE_P(TcpProxyIntegrationTestParams, MysqlIntegrationTest,
                          testing::ValuesIn(TestEnvironment::getIpVersionsForTest()),
                          TestUtility::ipTestParamsToString);
+
 } // namespace Envoy

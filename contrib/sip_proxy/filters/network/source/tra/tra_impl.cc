@@ -1,11 +1,5 @@
 #include "contrib/sip_proxy/filters/network/source/tra/tra_impl.h"
 
-#include <chrono>
-#include <cstdint>
-#include <string>
-#include <utility>
-#include <vector>
-
 #include "envoy/config/core/v3/grpc_service.pb.h"
 #include "envoy/stats/scope.h"
 
@@ -189,7 +183,7 @@ void GrpcClientImpl::onFailure(Grpc::Status::GrpcStatus status, const std::strin
                                Tracing::Span&) {
   ASSERT(status != Grpc::Status::WellKnownGrpcStatus::Ok);
   ENVOY_LOG(error, "GrpcClientImpl Failure {} {}", message, status);
-  // callbacks_->complete(ResponseType::FailureResp, status);
+  // callbacks_->complete(ResponseType::FailureResp, "", absl::any());
   // callbacks_ = nullptr;
 }
 

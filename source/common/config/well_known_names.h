@@ -109,6 +109,8 @@ public:
   const std::string LOCAL_HTTP_RATELIMIT_PREFIX = "envoy.local_http_ratelimit_prefix";
   // Stats prefix for the Local Ratelimit network filter
   const std::string LOCAL_NETWORK_RATELIMIT_PREFIX = "envoy.local_network_ratelimit_prefix";
+  // Stats prefix for the Local Ratelimit listener filter
+  const std::string LOCAL_LISTENER_RATELIMIT_PREFIX = "envoy.local_listener_ratelimit_prefix";
   // Stats prefix for the TCP Proxy network filter
   const std::string TCP_PREFIX = "envoy.tcp_prefix";
   // Stats prefix for the UDP Proxy network filter
@@ -137,6 +139,8 @@ public:
   const std::string RDS_ROUTE_CONFIG = "envoy.rds_route_config";
   // Request route given by the Router http filter
   const std::string ROUTE = "envoy.route";
+  // Stats prefix for the ext_authz HTTP filter
+  const std::string EXT_AUTHZ_PREFIX = "envoy.ext_authz_prefix";
   // Listener manager worker id
   const std::string WORKER_ID = "envoy.worker_id";
   // Stats prefix for the Thrift Proxy network filter
@@ -172,6 +176,18 @@ private:
 };
 
 using TagNames = ConstSingleton<TagNameValues>;
+
+// This class holds extension points which will always be built into Envoy in
+// server mode, but may be excluded from Envoy Mobile.
+class ServerBuiltInExtensionValues {
+public:
+  // Extension point for the default listener.
+  const std::string DEFAULT_LISTENER = "envoy.listener_manager_impl.default";
+  // Extension point for the validation listener
+  const std::string VALIDATION_LISTENER = "envoy.listener_manager_impl.validation";
+};
+
+using ServerExtensionValues = ConstSingleton<ServerBuiltInExtensionValues>;
 
 } // namespace Config
 } // namespace Envoy

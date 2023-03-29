@@ -9,6 +9,7 @@
 #include "envoy/config/bootstrap/v3/bootstrap.pb.h"
 #include "envoy/config/cluster/v3/cluster.pb.h"
 #include "envoy/config/core/v3/base.pb.h"
+#include "envoy/config/core/v3/proxy_protocol.pb.h"
 #include "envoy/config/endpoint/v3/endpoint.pb.h"
 #include "envoy/config/listener/v3/listener_components.pb.h"
 #include "envoy/config/route/v3/route_components.pb.h"
@@ -110,6 +111,11 @@ public:
       return *this;
     }
 
+    ServerSslOptions& setTrustRootOnly(bool trust_root_only) {
+      trust_root_only_ = trust_root_only;
+      return *this;
+    }
+
     bool allow_expired_certificate_{};
     envoy::config::core::v3::TypedExtensionConfig* custom_validator_config_;
     bool rsa_cert_{true};
@@ -129,6 +135,7 @@ public:
     std::vector<envoy::extensions::transport_sockets::tls::v3::SubjectAltNameMatcher>
         san_matchers_{};
     bool client_with_intermediate_cert_{false};
+    bool trust_root_only_{false};
     absl::optional<uint32_t> max_verify_depth_{absl::nullopt};
   };
 
@@ -190,6 +197,9 @@ public:
   // Configuration for L7 proxying, with clusters cluster_1 and cluster_2 meant to be added via CDS.
   // api_type should be REST, GRPC, or DELTA_GRPC.
   static std::string discoveredClustersBootstrap(const std::string& api_type);
+  // Configuration for L7 proxying, with clusters cluster_1 and cluster_2 meant to be added via CDS.
+  // but there are no listeners.
+  static std::string clustersNoListenerBootstrap(const std::string& api_type);
   static std::string adsBootstrap(const std::string& api_type);
   // Builds a standard Cluster config fragment, with a single endpoint (at address:port).
   static envoy::config::cluster::v3::Cluster
@@ -384,7 +394,9 @@ public:
   // Given an HCM with the default config, set the matcher to be a connect matcher and enable
   // CONNECT requests.
   static void setConnectConfig(HttpConnectionManager& hcm, bool terminate_connect, bool allow_post,
-                               bool http3 = false);
+                               bool http3 = false,
+                               absl::optional<envoy::config::core::v3::ProxyProtocolConfig::Version>
+                                   proxy_protocol_version = absl::nullopt);
 
   void setLocalReply(
       const envoy::extensions::filters::network::http_connection_manager::v3::LocalReplyConfig&
@@ -460,7 +472,7 @@ public:
 
   // Set CDS contents on filesystem.
   void setCds(const std::vector<envoy::config::cluster::v3::Cluster>& cluster);
-  const std::string& cds_path() const { return cds_path_; }
+  const std::string& cdsPath() const { return cds_path_; }
 
 private:
   const std::string cds_path_;
@@ -478,7 +490,7 @@ public:
   void setEdsAndWait(const std::vector<envoy::config::endpoint::v3::ClusterLoadAssignment>&
                          cluster_load_assignments,
                      IntegrationTestServerStats& server_stats);
-  const std::string& eds_path() const { return eds_path_; }
+  const std::string& edsPath() const { return eds_path_; }
 
 private:
   const std::string eds_path_;

@@ -28,7 +28,7 @@ fi
 [[ -z "${SRCDIR}" ]] && SRCDIR="${PWD}"
 [[ -z "${VALIDATE_COVERAGE}" ]] && VALIDATE_COVERAGE=true
 [[ -z "${FUZZ_COVERAGE}" ]] && FUZZ_COVERAGE=false
-[[ -z "${COVERAGE_THRESHOLD}" ]] && COVERAGE_THRESHOLD=96.2
+[[ -z "${COVERAGE_THRESHOLD}" ]] && COVERAGE_THRESHOLD=96.1
 COVERAGE_TARGET="${COVERAGE_TARGET:-}"
 read -ra BAZEL_BUILD_OPTIONS <<< "${BAZEL_BUILD_OPTIONS:-}"
 
@@ -63,8 +63,6 @@ else
       "--test_tag_filters=-nocoverage,-fuzz_target")
 fi
 
-# Don't block coverage on flakes.
-BAZEL_BUILD_OPTIONS+=("--flaky_test_attempts=2")
 # Output unusually long logs due to trace logging.
 BAZEL_BUILD_OPTIONS+=("--experimental_ui_max_stdouterr_bytes=80000000")
 
@@ -79,8 +77,16 @@ COVERAGE_DIR="${SRCDIR}"/generated/coverage && [[ ${FUZZ_COVERAGE} == "true" ]] 
 rm -rf "${COVERAGE_DIR}"
 mkdir -p "${COVERAGE_DIR}"
 
-COVERAGE_DATA="${COVERAGE_DIR}/coverage.dat"
-cp bazel-out/_coverage/_coverage_report.dat "${COVERAGE_DATA}"
+if [[ ! -e bazel-out/_coverage/_coverage_report.dat ]]; then
+    echo "No coverage report found (bazel-out/_coverage/_coverage_report.dat)" >&2
+    exit 1
+elif [[ ! -s bazel-out/_coverage/_coverage_report.dat ]]; then
+    echo "Coverage report is empty (bazel-out/_coverage/_coverage_report.dat)" >&2
+    exit 1
+else
+    COVERAGE_DATA="${COVERAGE_DIR}/coverage.dat"
+    cp bazel-out/_coverage/_coverage_report.dat "${COVERAGE_DATA}"
+fi
 
 COVERAGE_VALUE="$(genhtml --prefix "${PWD}" --output "${COVERAGE_DIR}" "${COVERAGE_DATA}" | tee /dev/stderr | grep lines... | cut -d ' ' -f 4)"
 COVERAGE_VALUE=${COVERAGE_VALUE%?}
@@ -111,8 +117,9 @@ set +e
 if [[ "$VALIDATE_COVERAGE" == "true" ]] && [[ "${FUZZ_COVERAGE}" == "false" ]]; then
   echo "Checking per-extension coverage"
   output=$(./test/per_file_coverage.sh)
+  response=$?
 
-  if [ $? -eq 1 ]; then
+  if [ $response -ne 0 ]; then
     echo Per-extension coverage failed:
     echo "$output"
     COVERAGE_FAILED=1

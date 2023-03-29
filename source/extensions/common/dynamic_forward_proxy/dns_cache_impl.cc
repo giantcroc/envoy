@@ -216,7 +216,7 @@ DnsCacheImpl::PrimaryHostInfo& DnsCacheImpl::getPrimaryHost(const std::string& h
   absl::ReaderMutexLock reader_lock{&primary_hosts_lock_};
   const auto primary_host_it = primary_hosts_.find(host);
   ASSERT(primary_host_it != primary_hosts_.end());
-  return *(primary_host_it->second.get());
+  return *(primary_host_it->second);
 }
 
 void DnsCacheImpl::onResolveTimeout(const std::string& host) {
@@ -581,6 +581,11 @@ void DnsCacheImpl::loadCacheEntries(
       return KeyValueStore::Iterate::Break;
     }
     createHost(key, responses.front().addrInfo().address_->ip()->port());
+    ENVOY_LOG_EVENT(
+        debug, "dns_cache_load_finished", "persistent dns cache load complete for host '{}': {}",
+        key, accumulateToString<Network::DnsResponse>(responses, [](const auto& dns_response) {
+          return dns_response.addrInfo().address_->asString();
+        }));
     finishResolve(key, Network::DnsResolver::ResolutionStatus::Success, std::move(responses),
                   resolution_time);
     stats_.cache_load_.inc();

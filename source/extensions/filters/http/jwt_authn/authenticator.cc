@@ -163,23 +163,29 @@ void AuthenticatorImpl::startVerify() {
   curr_token_ = std::move(tokens_.back());
   tokens_.pop_back();
 
+  bool use_jwt_cache = false;
+  Status status;
   if (provider_.has_value()) {
     jwks_data_ = jwks_cache_.findByProvider(*provider_);
     jwt_ = jwks_data_->getJwtCache().lookup(curr_token_->token());
     if (jwt_ != nullptr) {
-      handleGoodJwt(/*cache_hit=*/true);
-      return;
+      jwks_cache_.stats().jwt_cache_hit_.inc();
+      use_jwt_cache = true;
+    } else {
+      jwks_cache_.stats().jwt_cache_miss_.inc();
     }
   }
 
-  ENVOY_LOG(debug, "{}: Parse Jwt {}", name(), curr_token_->token());
-  owned_jwt_ = std::make_unique<::google::jwt_verify::Jwt>();
-  Status status = owned_jwt_->parseFromString(curr_token_->token());
-  jwt_ = owned_jwt_.get();
+  if (!use_jwt_cache) {
+    ENVOY_LOG(debug, "{}: Parse Jwt {}", name(), curr_token_->token());
+    owned_jwt_ = std::make_unique<::google::jwt_verify::Jwt>();
+    status = owned_jwt_->parseFromString(curr_token_->token());
+    jwt_ = owned_jwt_.get();
 
-  if (status != Status::Ok) {
-    doneWithStatus(status);
-    return;
+    if (status != Status::Ok) {
+      doneWithStatus(status);
+      return;
+    }
   }
 
   ENVOY_LOG(debug, "{}: Verifying JWT token of issuer {}", name(), jwt_->iss_);
@@ -221,6 +227,11 @@ void AuthenticatorImpl::startVerify() {
                                           : jwks_data_->areAudiencesAllowed(jwt_->audiences_);
   if (!is_allowed) {
     doneWithStatus(Status::JwtAudienceNotAllowed);
+    return;
+  }
+
+  if (use_jwt_cache) {
+    handleGoodJwt(/*cache_hit=*/true);
     return;
   }
 
@@ -361,6 +372,31 @@ void AuthenticatorImpl::handleGoodJwt(bool cache_hit) {
 void AuthenticatorImpl::doneWithStatus(const Status& status) {
   ENVOY_LOG(debug, "{}: JWT token verification completed with: {}", name(),
             ::google::jwt_verify::getStatusString(status));
+
+  if (Status::Ok != status) {
+    // Forward the failed status to dynamic metadata
+    ENVOY_LOG(debug, "status is: {}", ::google::jwt_verify::getStatusString(status));
+
+    std::string failed_status_in_metadata;
+
+    if (jwks_data_) {
+      failed_status_in_metadata = jwks_data_->getJwtProvider().failed_status_in_metadata();
+    } else if (jwks_cache_.getSingleProvider()) {
+      failed_status_in_metadata =
+          jwks_cache_.getSingleProvider()->getJwtProvider().failed_status_in_metadata();
+    }
+
+    if (!failed_status_in_metadata.empty()) {
+
+      ProtobufWkt::Struct failed_status;
+      auto& failed_status_fields = *failed_status.mutable_fields();
+      failed_status_fields["code"].set_number_value(enumToInt(status));
+      failed_status_fields["message"].set_string_value(google::jwt_verify::getStatusString(status));
+      ENVOY_LOG(debug, "Code: {} Message: {}", enumToInt(status),
+                google::jwt_verify::getStatusString(status));
+      set_extracted_jwt_data_cb_(failed_status_in_metadata, failed_status);
+    }
+  }
 
   // If a request has multiple tokens, all of them must be valid. Otherwise it may have
   // following security hole: a request has a good token and a bad one, it will pass

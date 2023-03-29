@@ -25,6 +25,7 @@ using Server::Configuration::MockFactoryContext;
 using ::testing::_;
 using ::testing::Invoke;
 using ::testing::NiceMock;
+using testing::Return;
 using Upstream::MockThreadLocalCluster;
 
 constexpr char DefaultConfig[] = R"EOF(
@@ -247,7 +248,7 @@ TEST_F(GcpAuthnFilterTest, ResumeFilterChainIteration) {
   client_callback_->onSuccess(client_request_, std::move(response));
 }
 
-TEST_F(GcpAuthnFilterTest, DestoryFilter) {
+TEST_F(GcpAuthnFilterTest, DestroyFilter) {
   setupMockObjects();
   setupFilterAndCallback();
   // Set up mock filter metadata.

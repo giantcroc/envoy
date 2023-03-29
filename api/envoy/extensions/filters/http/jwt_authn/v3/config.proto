@@ -53,7 +53,7 @@ option (udpa.annotations.file_status).package_version_status = ACTIVE;
 //       cache_duration:
 //         seconds: 300
 //
-// [#next-free-field: 16]
+// [#next-free-field: 17]
 message JwtProvider {
   option (udpa.annotations.versioning).previous_message_type =
       "envoy.config.filter.http.jwt_authn.v2alpha.JwtProvider";
@@ -270,6 +270,21 @@ message JwtProvider {
   //
   string header_in_metadata = 14;
 
+  // If non empty, the failure status `::google::jwt_verify::Status` for a non verified JWT will be written to StreamInfo DynamicMetadata
+  // in the format as: ``namespace`` is the jwt_authn filter name as ````envoy.filters.http.jwt_authn````
+  // The value is the ``protobuf::Struct``. The values of this field will be ``code`` and ``message``
+  // and they will contain the JWT authentication failure status code and a message describing the failure.
+  //
+  // For example, if failed_status_in_metadata is ``my_auth_failure_status``:
+  //
+  // .. code-block:: yaml
+  //
+  //   envoy.filters.http.jwt_authn:
+  //     my_auth_failure_status:
+  //       code: 3
+  //       message: Jwt expired
+  string failed_status_in_metadata = 16;
+
   // Specify the clock skew in seconds when verifying JWT time constraint,
   // such as ``exp``, and ``nbf``. If not specified, default is 60 seconds.
   uint32 clock_skew_seconds = 10;
@@ -314,7 +329,7 @@ message RemoteJwks {
   config.core.v3.HttpUri http_uri = 1;
 
   // Duration after which the cached JWKS should be expired. If not specified, default cache
-  // duration is 5 minutes.
+  // duration is 10 minutes.
   google.protobuf.Duration cache_duration = 2;
 
   // Fetch Jwks asynchronously in the main thread before the listener is activated.
@@ -376,6 +391,9 @@ message JwksAsyncFetch {
   // If true, it is activated without waiting for the initial fetch to complete.
   // Default is false.
   bool fast_listener = 1;
+
+  // The duration to refetch after a failed fetch. If not specified, default is 1 second.
+  google.protobuf.Duration failed_refetch_duration = 2;
 }
 
 // This message specifies a header location to extract JWT token.

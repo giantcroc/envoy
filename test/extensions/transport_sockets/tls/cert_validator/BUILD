@@ -63,6 +63,7 @@ envoy_cc_test(
 
 envoy_cc_test(
     name = "cert_validator_integration_test",
+    size = "large",
     srcs = [
         "default_validator_integration_test.cc",
         "default_validator_integration_test.h",
@@ -73,6 +74,8 @@ envoy_cc_test(
     ],
     deps = [
         "//test/integration:http_integration_lib",
+        "//test/test_common:test_runtime_lib",
+        "//test/test_common:utility_lib",
     ],
 )
 

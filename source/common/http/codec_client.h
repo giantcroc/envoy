@@ -8,6 +8,7 @@
 #include "envoy/event/deferred_deletable.h"
 #include "envoy/event/timer.h"
 #include "envoy/http/codec.h"
+#include "envoy/http/header_validator.h"
 #include "envoy/network/connection.h"
 #include "envoy/network/filter.h"
 #include "envoy/upstream/upstream.h"
@@ -72,10 +73,16 @@ public:
   bool isHalfCloseEnabled() { return connection_->isHalfCloseEnabled(); }
 
   /**
+   * Initialize all of the installed read filters on the underlying connection.
+   * This effectively calls onNewConnection() on each of them.
+   */
+  void initializeReadFilters() { connection_->initializeReadFilters(); }
+
+  /**
    * Close the underlying network connection. This is immediate and will not attempt to flush any
    * pending write data.
    */
-  void close();
+  void close(Network::ConnectionCloseType type = Network::ConnectionCloseType::NoFlush);
 
   /**
    * Send a codec level go away indication to the peer.
@@ -164,7 +171,7 @@ protected:
   }
 
   void onIdleTimeout() {
-    host_->cluster().trafficStats().upstream_cx_idle_timeout_.inc();
+    host_->cluster().trafficStats()->upstream_cx_idle_timeout_.inc();
     close();
   }
 
@@ -223,7 +230,9 @@ private:
                          public ResponseDecoderWrapper,
                          public RequestEncoderWrapper {
     ActiveRequest(CodecClient& parent, ResponseDecoder& inner)
-        : ResponseDecoderWrapper(inner), RequestEncoderWrapper(nullptr), parent_(parent) {
+        : ResponseDecoderWrapper(inner), RequestEncoderWrapper(nullptr), parent_(parent),
+          header_validator_(
+              parent.host_->cluster().makeHeaderValidator(parent.codec_->protocol())) {
       switch (parent.protocol()) {
       case Protocol::Http10:
       case Protocol::Http11:
@@ -237,6 +246,8 @@ private:
         break;
       }
     }
+
+    void decodeHeaders(ResponseHeaderMapPtr&& headers, bool end_stream) override;
 
     // StreamCallbacks
     void onResetStream(StreamResetReason reason, absl::string_view) override {
@@ -260,6 +271,7 @@ private:
     void removeEncoderCallbacks() { inner_encoder_->getStream().removeCallbacks(*this); }
 
     CodecClient& parent_;
+    Http::HeaderValidatorPtr header_validator_;
     bool wait_encode_complete_{true};
     bool encode_complete_{false};
     bool decode_complete_{false};

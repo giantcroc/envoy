@@ -25,7 +25,7 @@ public:
   void resume() override;
   CallbackResult pause() override;
   ParserStatus getStatus() const override;
-  uint16_t statusCode() const override;
+  Http::Code statusCode() const override;
   bool isHttp11() const override;
   absl::optional<uint64_t> contentLength() const override;
   bool isChunked() const override;
@@ -57,6 +57,9 @@ private:
   void HandleError(quiche::BalsaFrameEnums::ErrorCode error_code) override;
   void HandleWarning(quiche::BalsaFrameEnums::ErrorCode error_code) override;
 
+  // Shared implementation for ProcessHeaders() and ProcessTrailers().
+  void processHeadersOrTrailersImpl(const quiche::BalsaHeaders& headers);
+
   // Return ParserStatus::Error if `result` is CallbackResult::Error.
   // Return current value of `status_` otherwise.
   // Typical use would be `status_ = convertResult(result);`
@@ -66,9 +69,12 @@ private:
   quiche::BalsaHeaders headers_;
   quiche::BalsaHeaders trailers_;
 
+  const MessageType message_type_ = MessageType::Request;
   ParserCallbacks* connection_ = nullptr;
+  bool first_byte_processed_ = false;
   bool headers_done_ = false;
   ParserStatus status_ = ParserStatus::Ok;
+  // An error message, often seemingly arbitrary to match http-parser behavior.
   absl::string_view error_message_;
 };
 

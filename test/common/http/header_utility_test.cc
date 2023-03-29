@@ -8,6 +8,7 @@
 #include "source/common/http/header_utility.h"
 #include "source/common/json/json_loader.h"
 
+#include "test/mocks/http/header_validator.h"
 #include "test/test_common/test_runtime.h"
 #include "test/test_common/utility.h"
 
@@ -1139,6 +1140,23 @@ TEST(HeaderIsValidTest, IsConnectResponse) {
   EXPECT_FALSE(HeaderUtility::isConnectResponse(get_request.get(), success_response));
 }
 
+#ifdef ENVOY_ENABLE_HTTP_DATAGRAMS
+TEST(HeaderIsValidTest, IsCapsuleProtocol) {
+  EXPECT_TRUE(
+      HeaderUtility::isCapsuleProtocol(TestRequestHeaderMapImpl{{"Capsule-Protocol", "?1"}}));
+  EXPECT_TRUE(HeaderUtility::isCapsuleProtocol(
+      TestRequestHeaderMapImpl{{"Capsule-Protocol", "?1;a=1;b=2;c;d=?0"}}));
+  EXPECT_FALSE(
+      HeaderUtility::isCapsuleProtocol(TestRequestHeaderMapImpl{{"Capsule-Protocol", "?0"}}));
+  EXPECT_FALSE(HeaderUtility::isCapsuleProtocol(
+      TestRequestHeaderMapImpl{{"Capsule-Protocol", "?1"}, {"Capsule-Protocol", "?1"}}));
+  EXPECT_FALSE(HeaderUtility::isCapsuleProtocol(TestRequestHeaderMapImpl{{":method", "CONNECT"}}));
+  EXPECT_TRUE(HeaderUtility::isCapsuleProtocol(
+      TestResponseHeaderMapImpl{{":status", "200"}, {"Capsule-Protocol", "?1"}}));
+  EXPECT_FALSE(HeaderUtility::isCapsuleProtocol(TestResponseHeaderMapImpl{{":status", "200"}}));
+}
+#endif
+
 TEST(HeaderIsValidTest, ShouldHaveNoBody) {
   const std::vector<std::string> methods{{"CONNECT"}, {"GET"}, {"DELETE"}, {"TRACE"}, {"HEAD"}};
 
@@ -1211,31 +1229,29 @@ TEST(RequiredHeaders, IsModifiableHeader) {
 }
 
 TEST(ValidateHeaders, HeaderNameWithUnderscores) {
-  Stats::MockCounter dropped;
-  Stats::MockCounter rejected;
-  EXPECT_CALL(dropped, inc());
-  EXPECT_CALL(rejected, inc()).Times(0u);
+  MockHeaderValidatorStats stats;
+  EXPECT_CALL(stats, incDroppedHeadersWithUnderscores());
+  EXPECT_CALL(stats, incRequestsRejectedWithUnderscoresInHeaders()).Times(0u);
   EXPECT_EQ(HeaderUtility::HeaderValidationResult::DROP,
             HeaderUtility::checkHeaderNameForUnderscores(
                 "header_with_underscore", envoy::config::core::v3::HttpProtocolOptions::DROP_HEADER,
-                dropped, rejected));
+                stats));
 
-  EXPECT_CALL(dropped, inc()).Times(0u);
-  EXPECT_CALL(rejected, inc());
+  EXPECT_CALL(stats, incDroppedHeadersWithUnderscores()).Times(0u);
+  EXPECT_CALL(stats, incRequestsRejectedWithUnderscoresInHeaders());
   EXPECT_EQ(HeaderUtility::HeaderValidationResult::REJECT,
             HeaderUtility::checkHeaderNameForUnderscores(
                 "header_with_underscore",
-                envoy::config::core::v3::HttpProtocolOptions::REJECT_REQUEST, dropped, rejected));
+                envoy::config::core::v3::HttpProtocolOptions::REJECT_REQUEST, stats));
+
+  EXPECT_EQ(
+      HeaderUtility::HeaderValidationResult::ACCEPT,
+      HeaderUtility::checkHeaderNameForUnderscores(
+          "header_with_underscore", envoy::config::core::v3::HttpProtocolOptions::ALLOW, stats));
 
   EXPECT_EQ(HeaderUtility::HeaderValidationResult::ACCEPT,
             HeaderUtility::checkHeaderNameForUnderscores(
-                "header_with_underscore", envoy::config::core::v3::HttpProtocolOptions::ALLOW,
-                dropped, rejected));
-
-  EXPECT_EQ(HeaderUtility::HeaderValidationResult::ACCEPT,
-            HeaderUtility::checkHeaderNameForUnderscores(
-                "header", envoy::config::core::v3::HttpProtocolOptions::REJECT_REQUEST, dropped,
-                rejected));
+                "header", envoy::config::core::v3::HttpProtocolOptions::REJECT_REQUEST, stats));
 }
 
 TEST(ValidateHeaders, Connect) {

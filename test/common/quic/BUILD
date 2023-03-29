@@ -3,6 +3,7 @@ load(
     "envoy_cc_test",
     "envoy_cc_test_library",
     "envoy_package",
+    "envoy_select_enable_http_datagrams",
 )
 
 licenses(["notice"])  # Apache 2
@@ -159,11 +160,11 @@ envoy_cc_test(
         ":test_proof_source_lib",
         ":test_utils_lib",
         "//envoy/stats:stats_macros",
-        "//source/common/quic:codec_lib",
         "//source/common/quic:envoy_quic_alarm_factory_lib",
         "//source/common/quic:envoy_quic_connection_helper_lib",
         "//source/common/quic:envoy_quic_server_connection_lib",
         "//source/common/quic:envoy_quic_server_session_lib",
+        "//source/common/quic:server_codec_lib",
         "//source/server:configuration_lib",
         "//test/mocks/event:event_mocks",
         "//test/mocks/http:http_mocks",
@@ -186,7 +187,7 @@ envoy_cc_test(
     deps = [
         ":test_utils_lib",
         "//envoy/stats:stats_macros",
-        "//source/common/quic:codec_lib",
+        "//source/common/quic:client_codec_lib",
         "//source/common/quic:envoy_quic_alarm_factory_lib",
         "//source/common/quic:envoy_quic_client_connection_lib",
         "//source/common/quic:envoy_quic_client_session_lib",
@@ -214,6 +215,7 @@ envoy_cc_test(
         "//source/common/quic:active_quic_listener_lib",
         "//source/common/quic:envoy_quic_utils_lib",
         "//source/common/quic:udp_gso_batch_writer_lib",
+        "//source/extensions/listener_managers/listener_manager:connection_handler_lib",
         "//source/extensions/quic/crypto_stream:envoy_quic_crypto_server_stream_lib",
         "//source/extensions/quic/proof_source:envoy_quic_proof_source_factory_impl_lib",
         "//source/server:configuration_lib",
@@ -240,6 +242,7 @@ envoy_cc_test(
         "//source/common/quic:envoy_quic_dispatcher_lib",
         "//source/common/quic:envoy_quic_proof_source_lib",
         "//source/common/quic:envoy_quic_server_session_lib",
+        "//source/extensions/listener_managers/listener_manager:connection_handler_lib",
         "//source/extensions/quic/crypto_stream:envoy_quic_crypto_server_stream_lib",
         "//source/server:configuration_lib",
         "//test/mocks/event:event_mocks",
@@ -341,6 +344,7 @@ envoy_cc_test_library(
         "//source/common/quic:envoy_quic_server_connection_lib",
         "//source/common/quic:quic_filter_manager_connection_lib",
         "//test/test_common:environment_lib",
+        "//test/test_common:utility_lib",
         "@com_github_google_quiche//:quic_core_http_spdy_session_lib",
         "@com_github_google_quiche//:quic_test_tools_first_flight_lib",
         "@com_github_google_quiche//:quic_test_tools_qpack_qpack_test_utils_lib",
@@ -362,4 +366,16 @@ envoy_cc_test(
         "//test/test_common:environment_lib",
         "//test/test_common:utility_lib",
     ],
+)
+
+envoy_cc_test(
+    name = "http_datagram_handler_test",
+    srcs = envoy_select_enable_http_datagrams(["http_datagram_handler_test.cc"]),
+    tags = ["nofips"],
+    deps = envoy_select_enable_http_datagrams([
+        "//source/common/quic:http_datagram_handler",
+        "//test/mocks/buffer:buffer_mocks",
+        "//test/test_common:utility_lib",
+        "@com_github_google_quiche//:quic_test_tools_test_utils_lib",
+    ]),
 )

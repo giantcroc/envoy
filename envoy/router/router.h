@@ -87,12 +87,12 @@ public:
   virtual Http::Code responseCode() const PURE;
 
   /**
-   * Returns the redirect path based on the request headers.
+   * Returns the redirect URI based on the request headers.
    * @param headers supplies the request headers.
    * @return std::string the redirect URL if this DirectResponseEntry is a redirect,
    *         or an empty string otherwise.
    */
-  virtual std::string newPath(const Http::RequestHeaderMap& headers) const PURE;
+  virtual std::string newUri(const Http::RequestHeaderMap& headers) const PURE;
 
   /**
    * Returns the response body to send with direct responses.
@@ -649,6 +649,12 @@ public:
   virtual bool includeAttemptCountInResponse() const PURE;
 
   /**
+   * @return bool whether to include the header in the upstream request to indicate it is a retry
+   * initiated by a timeout.
+   */
+  virtual bool includeIsTimeoutRetryHeader() const PURE;
+
+  /**
    * @return uint32_t any route cap on bytes which should be buffered for shadowing or retries.
    *         This is an upper bound so does not necessarily reflect the bytes which will be buffered
    *         as other limits may apply.
@@ -1080,10 +1086,11 @@ public:
   virtual const UpgradeMap& upgradeMap() const PURE;
 
   using ConnectConfig = envoy::config::route::v3::RouteAction::UpgradeConfig::ConnectConfig;
+  using ConnectConfigOptRef = OptRef<ConnectConfig>;
   /**
    * If present, informs how to handle proxying CONNECT requests on this route.
    */
-  virtual const absl::optional<ConnectConfig>& connectConfig() const PURE;
+  virtual const ConnectConfigOptRef connectConfig() const PURE;
 
   /**
    * @return std::string& the name of the route.

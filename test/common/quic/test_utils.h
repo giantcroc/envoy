@@ -11,6 +11,7 @@
 #include "source/common/stats/isolated_store_impl.h"
 
 #include "test/test_common/environment.h"
+#include "test/test_common/utility.h"
 
 #include "quiche/quic/core/http/quic_spdy_session.h"
 #include "quiche/quic/core/qpack/qpack_encoder.h"
@@ -57,7 +58,27 @@ public:
   MOCK_METHOD(void, SendConnectionClosePacket,
               (quic::QuicErrorCode, quic::QuicIetfTransportErrorCodes, const std::string&));
   MOCK_METHOD(bool, SendControlFrame, (const quic::QuicFrame& frame));
+  MOCK_METHOD(quic::MessageStatus, SendMessage,
+              (quic::QuicMessageId, absl::Span<quiche::QuicheMemSlice>, bool));
   MOCK_METHOD(void, dumpState, (std::ostream&, int), (const));
+};
+
+class MockEnvoyQuicClientConnection : public EnvoyQuicClientConnection {
+public:
+  MockEnvoyQuicClientConnection(const quic::QuicConnectionId& server_connection_id,
+                                quic::QuicConnectionHelperInterface& helper,
+                                quic::QuicAlarmFactory& alarm_factory,
+                                quic::QuicPacketWriter* writer, bool owns_writer,
+                                const quic::ParsedQuicVersionVector& supported_versions,
+                                Event::Dispatcher& dispatcher,
+                                Network::ConnectionSocketPtr&& connection_socket,
+                                quic::ConnectionIdGeneratorInterface& generator)
+      : EnvoyQuicClientConnection(server_connection_id, helper, alarm_factory, writer, owns_writer,
+                                  supported_versions, dispatcher, std::move(connection_socket),
+                                  generator) {}
+
+  MOCK_METHOD(quic::MessageStatus, SendMessage,
+              (quic::QuicMessageId, absl::Span<quiche::QuicheMemSlice>, bool));
 };
 
 class TestQuicCryptoStream : public quic::test::MockQuicCryptoStream {
@@ -118,6 +139,9 @@ public:
   using quic::QuicSpdySession::ActivateStream;
 
 protected:
+  quic::HttpDatagramSupport LocalHttpDatagramSupport() override {
+    return quic::HttpDatagramSupport::kRfc;
+  }
   bool hasDataToWrite() override { return HasDataToWrite(); }
   const quic::QuicConnection* quicConnection() const override {
     return initialized_ ? connection() : nullptr;
@@ -160,7 +184,12 @@ private:
   OptRef<quic::ProofVerifyContext> last_verify_context_;
 };
 
-class MockEnvoyQuicClientSession : public EnvoyQuicClientSession {
+class IsolatedStoreProvider {
+protected:
+  Stats::IsolatedStoreImpl stats_store_;
+};
+
+class MockEnvoyQuicClientSession : public IsolatedStoreProvider, public EnvoyQuicClientSession {
 public:
   MockEnvoyQuicClientSession(const quic::QuicConfig& config,
                              const quic::ParsedQuicVersionVector& supported_versions,
@@ -172,7 +201,7 @@ public:
                                std::make_shared<quic::QuicCryptoClientConfig>(
                                    quic::test::crypto_test_utils::ProofVerifierForTesting()),
                                nullptr, dispatcher, send_buffer_limit, crypto_stream_factory,
-                               quic_stat_names_, {}, stats_store_, nullptr) {}
+                               quic_stat_names_, {}, *stats_store_.rootScope(), nullptr) {}
 
   void Initialize() override {
     EnvoyQuicClientSession::Initialize();
@@ -202,13 +231,15 @@ public:
   using quic::QuicSpdySession::ActivateStream;
 
 protected:
+  quic::HttpDatagramSupport LocalHttpDatagramSupport() override {
+    return quic::HttpDatagramSupport::kRfc;
+  }
   bool hasDataToWrite() override { return HasDataToWrite(); }
   const quic::QuicConnection* quicConnection() const override {
     return initialized_ ? connection() : nullptr;
   }
   quic::QuicConnection* quicConnection() override { return initialized_ ? connection() : nullptr; }
 
-  Stats::IsolatedStoreImpl stats_store_;
   QuicStatNames quic_stat_names_{stats_store_.symbolTable()};
 };
 
@@ -217,7 +248,7 @@ Buffer::OwnedImpl generateChloPacketToSend(quic::ParsedQuicVersion quic_version,
                                            quic::QuicConnectionId connection_id) {
   std::unique_ptr<quic::QuicReceivedPacket> packet =
       std::move(quic::test::GetFirstFlightOfPackets(quic_version, quic_config, connection_id)[0]);
-  return Buffer::OwnedImpl(packet->data(), packet->length());
+  return {packet->data(), packet->length()};
 }
 
 void setQuicConfigWithDefaultValues(quic::QuicConfig* config) {
@@ -273,8 +304,8 @@ std::vector<std::pair<Network::Address::IpVersion, quic::ParsedQuicVersion>> gen
 std::string testParamsToString(
     const ::testing::TestParamInfo<std::pair<Network::Address::IpVersion, quic::ParsedQuicVersion>>&
         params) {
-  std::string ip_version = params.param.first == Network::Address::IpVersion::v4 ? "IPv4" : "IPv6";
-  return absl::StrCat(ip_version, quic::QuicVersionToString(params.param.second.transport_version));
+  return absl::StrCat(TestUtility::ipVersionToString(params.param.first),
+                      quic::QuicVersionToString(params.param.second.transport_version));
 }
 
 class MockProofVerifyContext : public EnvoyQuicProofVerifyContext {
