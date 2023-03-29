@@ -2,6 +2,7 @@ load("@rules_cc//cc:defs.bzl", "cc_library")
 
 cc_library(
    name = "lib",
-   srcs = ["libzstd.so","libqat_s.so","libusdm_drv_s.so"],
+   srcs = ["lib/libzstd.so","lib/libqat_s.so","lib/libusdm_drv_s.so","lib/libqatseqprod.so"],
+   hdrs = ["include/qatseqprod.h","include/zstd.h"],
    visibility = ["//visibility:public"],
 )

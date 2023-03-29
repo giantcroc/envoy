@@ -29,9 +29,11 @@ public:
   void compress(Buffer::Instance& buffer, Envoy::Compression::Compressor::State state) override;
 
 private:
+  ~ZstdCompressorImpl();
   void process(Buffer::Instance& output_buffer, ZSTD_EndDirective mode);
 
   std::unique_ptr<ZSTD_CCtx, decltype(&ZSTD_freeCCtx)> cctx_;
+  void* sequenceProducerState_;
   const ZstdCDictManagerPtr& cdict_manager_;
   const uint32_t compression_level_;
 };
