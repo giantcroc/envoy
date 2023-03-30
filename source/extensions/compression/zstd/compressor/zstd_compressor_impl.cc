@@ -27,7 +27,7 @@ ZstdCompressorImpl::ZstdCompressorImpl(uint32_t compression_level, bool enable_c
     /* register qatSequenceProducer */
   ZSTD_registerSequenceProducer(
       cctx_.get(),
-      sequenceProducerState,
+      sequenceProducerState_,
       qatSequenceProducer
   );
 
