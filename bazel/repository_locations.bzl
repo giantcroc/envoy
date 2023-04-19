@@ -1557,6 +1557,22 @@ REPOSITORY_LOCATIONS_SPEC = dict(
         extensions = ["envoy.compression.qatzip.compressor"],
         cpe = "N/A",
     ),
+    com_github_qat_zstd = dict(
+        project_name = "qat zstd",
+        project_desc = "qat zstd compression plugin",
+        project_url = "https://github.com/qiming-007/qat-zstd",
+        version = "0.5",
+        sha256 = "f6bc291b8319f730f21acbb4ba66b1b727c53b765181f4d8601c894baf2176db",
+        strip_prefix = "qat-zstd-{version}",
+        urls = ["https://github.com/qiming-007/qat-zstd/archive/refs/tags/v{version}.tar.gz"],
+        use_category = ["dataplane_ext"],
+        extensions = [
+            "envoy.compression.zstd.compressor",
+            "envoy.compression.zstd.decompressor",
+        ],        
+        release_date = "2023-04-19",
+        cpe = "N/A",
+    ),    
 )
 
 def _compiled_protoc_deps(locations, versions):
