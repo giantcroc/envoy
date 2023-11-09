@@ -34,7 +34,6 @@ ZstdCompressorImpl::ZstdCompressorImpl(uint32_t compression_level, bool enable_c
 
     /* register qatSequenceProducer */
     ZSTD_registerSequenceProducer(cctx_.get(), sequenceProducerState_, qatSequenceProducer);
-    ENVOY_LOG(debug, "zstd ZstdCompressorImpl disable fallback");
     result = ZSTD_CCtx_setParameter(cctx_.get(), ZSTD_c_enableSeqProducerFallback, 1);
     RELEASE_ASSERT(!ZSTD_isError(result), "");
   }
