@@ -1,0 +1,159 @@
+-P PREROUTING ACCEPT -c 2116 295955
+-P INPUT ACCEPT -c 1859 277339
+-P OUTPUT ACCEPT -c 16411 1017866
+-P POSTROUTING ACCEPT -c 16669 1042015
+-N DOCKER
+-N FLANNEL-POSTRTG
+-N KUBE-EXT-CGMYPRGDBRBZBFEN
+-N KUBE-EXT-HBO2MBMQRZFAHKF2
+-N KUBE-EXT-MC5E2LG7HIQNPQQU
+-N KUBE-KUBELET-CANARY
+-N KUBE-MARK-MASQ
+-N KUBE-NODEPORTS
+-N KUBE-POSTROUTING
+-N KUBE-PROXY-CANARY
+-N KUBE-SEP-6XVRDQFXUVS4IFFJ
+-N KUBE-SEP-BFHW24PRPXDAU5VI
+-N KUBE-SEP-C5FVQ3S26EWR2L6T
+-N KUBE-SEP-CBLZMDET24RR44AF
+-N KUBE-SEP-GRSLRZD6VDK53GAO
+-N KUBE-SEP-HFLQALFUNNT5VVIL
+-N KUBE-SEP-ISFYEX5PJ6IN6PQQ
+-N KUBE-SEP-KUFXDQQ7JGPCJVQV
+-N KUBE-SEP-MBDSWIELOZ7JG7QV
+-N KUBE-SEP-P5EUFAUZOGHXAVVR
+-N KUBE-SEP-QLTWNFXMO3GFATQV
+-N KUBE-SEP-T4Z4Y7GYE466CWGJ
+-N KUBE-SEP-T6E5F3IGQFXHDZNW
+-N KUBE-SEP-TRLQPM6DED6VD4JW
+-N KUBE-SEP-UDZF3HM4BRSTT7M6
+-N KUBE-SEP-YGJQ5OZFUH4JCDK5
+-N KUBE-SEP-ZQKWOEEXMUDADJAL
+-N KUBE-SERVICES
+-N KUBE-SVC-CG3LQLBYYHBKATGN
+-N KUBE-SVC-CGMYPRGDBRBZBFEN
+-N KUBE-SVC-ERIFXISQEP7F7OF4
+-N KUBE-SVC-F2IARDLERJIFF7VR
+-N KUBE-SVC-HBO2MBMQRZFAHKF2
+-N KUBE-SVC-IBZWWK3KTI7UHZ5A
+-N KUBE-SVC-JD5MR3NA4I4DYORP
+-N KUBE-SVC-MC5E2LG7HIQNPQQU
+-N KUBE-SVC-NPX46M4PTMTKRN6Y
+-N KUBE-SVC-NVNLZVDQSGQUD3NM
+-N KUBE-SVC-SIMN7BSCUVAV2FC7
+-N KUBE-SVC-TCOU7JCQXEZGVUNU
+-N KUBE-SVC-WHNIZNLB5XFXIX2C
+-N KUBE-SVC-XHUBMW47Y5G3ICIS
+-A PREROUTING -m comment --comment "kubernetes service portals" -c 918171 119664092 -j KUBE-SERVICES
+-A PREROUTING -m addrtype --dst-type LOCAL -c 4690 252867 -j DOCKER
+-A OUTPUT -m comment --comment "kubernetes service portals" -c 7941142 485710766 -j KUBE-SERVICES
+-A OUTPUT ! -d 127.0.0.0/8 -m addrtype --dst-type LOCAL -c 767833 46071198 -j DOCKER
+-A POSTROUTING -s 172.17.0.0/16 ! -o docker0 -c 636 38681 -j MASQUERADE
+-A POSTROUTING -m comment --comment "kubernetes postrouting rules" -c 8143901 502417680 -j KUBE-POSTROUTING
+-A POSTROUTING -s 172.18.0.0/16 ! -o br-f14ada792af7 -c 0 0 -j MASQUERADE
+-A POSTROUTING -s 172.17.0.4/32 -d 172.17.0.4/32 -p tcp -m tcp --dport 80 -c 0 0 -j MASQUERADE
+-A POSTROUTING -s 172.17.0.5/32 -d 172.17.0.5/32 -p tcp -m tcp --dport 5000 -c 0 0 -j MASQUERADE
+-A POSTROUTING -m comment --comment "flanneld masq" -c 388364 24439454 -j FLANNEL-POSTRTG
+-A DOCKER -i docker0 -c 0 0 -j RETURN
+-A DOCKER -i br-f14ada792af7 -c 0 0 -j RETURN
+-A DOCKER ! -i docker0 -p tcp -m tcp --dport 8088 -c 0 0 -j DNAT --to-destination 172.17.0.4:80
+-A DOCKER ! -i docker0 -p tcp -m tcp --dport 5000 -c 1674 87008 -j DNAT --to-destination 172.17.0.5:5000
+-A FLANNEL-POSTRTG -m mark --mark 0x4000/0x4000 -m comment --comment "flanneld masq" -c 0 0 -j RETURN
+-A FLANNEL-POSTRTG -s 10.244.0.0/24 -d 10.244.0.0/16 -m comment --comment "flanneld masq" -c 176744 10882104 -j RETURN
+-A FLANNEL-POSTRTG -s 10.244.0.0/16 -d 10.244.0.0/24 -m comment --comment "flanneld masq" -c 0 0 -j RETURN
+-A FLANNEL-POSTRTG ! -s 10.244.0.0/16 -d 10.244.0.0/24 -m comment --comment "flanneld masq" -c 0 0 -j RETURN
+-A FLANNEL-POSTRTG -s 10.244.0.0/16 ! -d 224.0.0.0/4 -m comment --comment "flanneld masq" -c 5886 426177 -j MASQUERADE --random-fully
+-A FLANNEL-POSTRTG ! -s 10.244.0.0/16 -d 10.244.0.0/16 -m comment --comment "flanneld masq" -c 0 0 -j MASQUERADE --random-fully
+-A KUBE-EXT-CGMYPRGDBRBZBFEN -m comment --comment "masquerade traffic for default/istio-ingressgateway:status-port external destinations" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-EXT-CGMYPRGDBRBZBFEN -c 0 0 -j KUBE-SVC-CGMYPRGDBRBZBFEN
+-A KUBE-EXT-HBO2MBMQRZFAHKF2 -m comment --comment "masquerade traffic for default/istio-ingressgateway:http2 external destinations" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-EXT-HBO2MBMQRZFAHKF2 -c 0 0 -j KUBE-SVC-HBO2MBMQRZFAHKF2
+-A KUBE-EXT-MC5E2LG7HIQNPQQU -m comment --comment "masquerade traffic for default/istio-ingressgateway:https external destinations" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-EXT-MC5E2LG7HIQNPQQU -c 0 0 -j KUBE-SVC-MC5E2LG7HIQNPQQU
+-A KUBE-MARK-MASQ -c 0 0 -j MARK --set-xmark 0x4000/0x4000
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/istio-ingressgateway:http2" -m tcp --dport 30877 -c 0 0 -j KUBE-EXT-HBO2MBMQRZFAHKF2
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/istio-ingressgateway:status-port" -m tcp --dport 31978 -c 0 0 -j KUBE-EXT-CGMYPRGDBRBZBFEN
+-A KUBE-NODEPORTS -p tcp -m comment --comment "default/istio-ingressgateway:https" -m tcp --dport 30453 -c 0 0 -j KUBE-EXT-MC5E2LG7HIQNPQQU
+-A KUBE-POSTROUTING -m mark ! --mark 0x4000/0x4000 -c 16921 1060331 -j RETURN
+-A KUBE-POSTROUTING -c 0 0 -j MARK --set-xmark 0x4000/0x0
+-A KUBE-POSTROUTING -m comment --comment "kubernetes service traffic requiring SNAT" -c 0 0 -j MASQUERADE --random-fully
+-A KUBE-SEP-6XVRDQFXUVS4IFFJ -s 10.244.0.52/32 -m comment --comment "kube-system/kube-dns:dns" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-6XVRDQFXUVS4IFFJ -p udp -m comment --comment "kube-system/kube-dns:dns" -m udp -c 2739 258762 -j DNAT --to-destination 10.244.0.52:53
+-A KUBE-SEP-BFHW24PRPXDAU5VI -s 10.244.0.52/32 -m comment --comment "kube-system/kube-dns:metrics" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-BFHW24PRPXDAU5VI -p tcp -m comment --comment "kube-system/kube-dns:metrics" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.52:9153
+-A KUBE-SEP-C5FVQ3S26EWR2L6T -s 10.165.56.200/32 -m comment --comment "default/kubernetes:https" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-C5FVQ3S26EWR2L6T -p tcp -m comment --comment "default/kubernetes:https" -m tcp -c 155 9300 -j DNAT --to-destination 10.165.56.200:6443
+-A KUBE-SEP-CBLZMDET24RR44AF -s 10.244.0.166/32 -m comment --comment "default/istio-ingressgateway:https" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-CBLZMDET24RR44AF -p tcp -m comment --comment "default/istio-ingressgateway:https" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.166:8443
+-A KUBE-SEP-GRSLRZD6VDK53GAO -s 10.244.0.166/32 -m comment --comment "default/istio-ingressgateway:http2" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-GRSLRZD6VDK53GAO -p tcp -m comment --comment "default/istio-ingressgateway:http2" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.166:8080
+-A KUBE-SEP-HFLQALFUNNT5VVIL -s 10.244.0.53/32 -m comment --comment "kube-system/kube-dns:dns-tcp" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-HFLQALFUNNT5VVIL -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.53:53
+-A KUBE-SEP-ISFYEX5PJ6IN6PQQ -s 10.244.0.164/32 -m comment --comment "istio-operator/istio-operator:http-metrics" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-ISFYEX5PJ6IN6PQQ -p tcp -m comment --comment "istio-operator/istio-operator:http-metrics" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.164:8383
+-A KUBE-SEP-KUFXDQQ7JGPCJVQV -s 10.244.0.165/32 -m comment --comment "istio-system/istiod:https-webhook" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-KUFXDQQ7JGPCJVQV -p tcp -m comment --comment "istio-system/istiod:https-webhook" -m tcp -c 1 60 -j DNAT --to-destination 10.244.0.165:15017
+-A KUBE-SEP-MBDSWIELOZ7JG7QV -s 10.244.0.165/32 -m comment --comment "istio-system/istiod:https-dns" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-MBDSWIELOZ7JG7QV -p tcp -m comment --comment "istio-system/istiod:https-dns" -m tcp -c 30 1800 -j DNAT --to-destination 10.244.0.165:15012
+-A KUBE-SEP-P5EUFAUZOGHXAVVR -s 10.244.0.53/32 -m comment --comment "kube-system/kube-dns:dns" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-P5EUFAUZOGHXAVVR -p udp -m comment --comment "kube-system/kube-dns:dns" -m udp -c 2814 266023 -j DNAT --to-destination 10.244.0.53:53
+-A KUBE-SEP-QLTWNFXMO3GFATQV -s 10.244.0.166/32 -m comment --comment "default/istio-ingressgateway:status-port" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-QLTWNFXMO3GFATQV -p tcp -m comment --comment "default/istio-ingressgateway:status-port" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.166:15021
+-A KUBE-SEP-T4Z4Y7GYE466CWGJ -s 10.244.0.165/32 -m comment --comment "istio-system/istiod:grpc-xds" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-T4Z4Y7GYE466CWGJ -p tcp -m comment --comment "istio-system/istiod:grpc-xds" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.165:15010
+-A KUBE-SEP-T6E5F3IGQFXHDZNW -s 10.244.0.165/32 -m comment --comment "istio-system/istiod:http-monitoring" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-T6E5F3IGQFXHDZNW -p tcp -m comment --comment "istio-system/istiod:http-monitoring" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.165:15014
+-A KUBE-SEP-TRLQPM6DED6VD4JW -s 10.244.0.167/32 -m comment --comment "istio-system/istio-egressgateway:http2" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-TRLQPM6DED6VD4JW -p tcp -m comment --comment "istio-system/istio-egressgateway:http2" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.167:8080
+-A KUBE-SEP-UDZF3HM4BRSTT7M6 -s 10.244.0.52/32 -m comment --comment "kube-system/kube-dns:dns-tcp" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-UDZF3HM4BRSTT7M6 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.52:53
+-A KUBE-SEP-YGJQ5OZFUH4JCDK5 -s 10.244.0.167/32 -m comment --comment "istio-system/istio-egressgateway:https" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-YGJQ5OZFUH4JCDK5 -p tcp -m comment --comment "istio-system/istio-egressgateway:https" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.167:8443
+-A KUBE-SEP-ZQKWOEEXMUDADJAL -s 10.244.0.53/32 -m comment --comment "kube-system/kube-dns:metrics" -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SEP-ZQKWOEEXMUDADJAL -p tcp -m comment --comment "kube-system/kube-dns:metrics" -m tcp -c 0 0 -j DNAT --to-destination 10.244.0.53:9153
+-A KUBE-SERVICES -d 10.96.0.10/32 -p tcp -m comment --comment "kube-system/kube-dns:metrics cluster IP" -m tcp --dport 9153 -c 0 0 -j KUBE-SVC-JD5MR3NA4I4DYORP
+-A KUBE-SERVICES -d 10.110.250.177/32 -p tcp -m comment --comment "istio-system/istio-egressgateway:https cluster IP" -m tcp --dport 443 -c 0 0 -j KUBE-SVC-F2IARDLERJIFF7VR
+-A KUBE-SERVICES -d 10.106.255.100/32 -p tcp -m comment --comment "default/istio-ingressgateway:http2 cluster IP" -m tcp --dport 80 -c 0 0 -j KUBE-SVC-HBO2MBMQRZFAHKF2
+-A KUBE-SERVICES -d 10.96.0.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -c 254 23909 -j KUBE-SVC-TCOU7JCQXEZGVUNU
+-A KUBE-SERVICES -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:grpc-xds cluster IP" -m tcp --dport 15010 -c 0 0 -j KUBE-SVC-NVNLZVDQSGQUD3NM
+-A KUBE-SERVICES -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:https-dns cluster IP" -m tcp --dport 15012 -c 4 240 -j KUBE-SVC-CG3LQLBYYHBKATGN
+-A KUBE-SERVICES -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:http-monitoring cluster IP" -m tcp --dport 15014 -c 0 0 -j KUBE-SVC-XHUBMW47Y5G3ICIS
+-A KUBE-SERVICES -d 10.110.250.177/32 -p tcp -m comment --comment "istio-system/istio-egressgateway:http2 cluster IP" -m tcp --dport 80 -c 0 0 -j KUBE-SVC-IBZWWK3KTI7UHZ5A
+-A KUBE-SERVICES -d 10.106.255.100/32 -p tcp -m comment --comment "default/istio-ingressgateway:status-port cluster IP" -m tcp --dport 15021 -c 0 0 -j KUBE-SVC-CGMYPRGDBRBZBFEN
+-A KUBE-SERVICES -d 10.96.0.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -c 0 0 -j KUBE-SVC-ERIFXISQEP7F7OF4
+-A KUBE-SERVICES -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:https-webhook cluster IP" -m tcp --dport 443 -c 0 0 -j KUBE-SVC-WHNIZNLB5XFXIX2C
+-A KUBE-SERVICES -d 10.99.124.43/32 -p tcp -m comment --comment "istio-operator/istio-operator:http-metrics cluster IP" -m tcp --dport 8383 -c 0 0 -j KUBE-SVC-SIMN7BSCUVAV2FC7
+-A KUBE-SERVICES -d 10.106.255.100/32 -p tcp -m comment --comment "default/istio-ingressgateway:https cluster IP" -m tcp --dport 443 -c 0 0 -j KUBE-SVC-MC5E2LG7HIQNPQQU
+-A KUBE-SERVICES -d 10.96.0.1/32 -p tcp -m comment --comment "default/kubernetes:https cluster IP" -m tcp --dport 443 -c 0 0 -j KUBE-SVC-NPX46M4PTMTKRN6Y
+-A KUBE-SERVICES -m comment --comment "kubernetes service nodeports; NOTE: this must be the last rule in this chain" -m addrtype --dst-type LOCAL -c 9085 561172 -j KUBE-NODEPORTS
+-A KUBE-SVC-CG3LQLBYYHBKATGN ! -s 10.244.0.0/16 -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:https-dns cluster IP" -m tcp --dport 15012 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-CG3LQLBYYHBKATGN -m comment --comment "istio-system/istiod:https-dns -> 10.244.0.165:15012" -c 30 1800 -j KUBE-SEP-MBDSWIELOZ7JG7QV
+-A KUBE-SVC-CGMYPRGDBRBZBFEN ! -s 10.244.0.0/16 -d 10.106.255.100/32 -p tcp -m comment --comment "default/istio-ingressgateway:status-port cluster IP" -m tcp --dport 15021 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-CGMYPRGDBRBZBFEN -m comment --comment "default/istio-ingressgateway:status-port -> 10.244.0.166:15021" -c 0 0 -j KUBE-SEP-QLTWNFXMO3GFATQV
+-A KUBE-SVC-ERIFXISQEP7F7OF4 ! -s 10.244.0.0/16 -d 10.96.0.10/32 -p tcp -m comment --comment "kube-system/kube-dns:dns-tcp cluster IP" -m tcp --dport 53 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-ERIFXISQEP7F7OF4 -m comment --comment "kube-system/kube-dns:dns-tcp -> 10.244.0.52:53" -m statistic --mode random --probability 0.50000000000 -c 0 0 -j KUBE-SEP-UDZF3HM4BRSTT7M6
+-A KUBE-SVC-ERIFXISQEP7F7OF4 -m comment --comment "kube-system/kube-dns:dns-tcp -> 10.244.0.53:53" -c 0 0 -j KUBE-SEP-HFLQALFUNNT5VVIL
+-A KUBE-SVC-F2IARDLERJIFF7VR ! -s 10.244.0.0/16 -d 10.110.250.177/32 -p tcp -m comment --comment "istio-system/istio-egressgateway:https cluster IP" -m tcp --dport 443 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-F2IARDLERJIFF7VR -m comment --comment "istio-system/istio-egressgateway:https -> 10.244.0.167:8443" -c 0 0 -j KUBE-SEP-YGJQ5OZFUH4JCDK5
+-A KUBE-SVC-HBO2MBMQRZFAHKF2 ! -s 10.244.0.0/16 -d 10.106.255.100/32 -p tcp -m comment --comment "default/istio-ingressgateway:http2 cluster IP" -m tcp --dport 80 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-HBO2MBMQRZFAHKF2 -m comment --comment "default/istio-ingressgateway:http2 -> 10.244.0.166:8080" -c 0 0 -j KUBE-SEP-GRSLRZD6VDK53GAO
+-A KUBE-SVC-IBZWWK3KTI7UHZ5A ! -s 10.244.0.0/16 -d 10.110.250.177/32 -p tcp -m comment --comment "istio-system/istio-egressgateway:http2 cluster IP" -m tcp --dport 80 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-IBZWWK3KTI7UHZ5A -m comment --comment "istio-system/istio-egressgateway:http2 -> 10.244.0.167:8080" -c 0 0 -j KUBE-SEP-TRLQPM6DED6VD4JW
+-A KUBE-SVC-JD5MR3NA4I4DYORP ! -s 10.244.0.0/16 -d 10.96.0.10/32 -p tcp -m comment --comment "kube-system/kube-dns:metrics cluster IP" -m tcp --dport 9153 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-JD5MR3NA4I4DYORP -m comment --comment "kube-system/kube-dns:metrics -> 10.244.0.52:9153" -m statistic --mode random --probability 0.50000000000 -c 0 0 -j KUBE-SEP-BFHW24PRPXDAU5VI
+-A KUBE-SVC-JD5MR3NA4I4DYORP -m comment --comment "kube-system/kube-dns:metrics -> 10.244.0.53:9153" -c 0 0 -j KUBE-SEP-ZQKWOEEXMUDADJAL
+-A KUBE-SVC-MC5E2LG7HIQNPQQU ! -s 10.244.0.0/16 -d 10.106.255.100/32 -p tcp -m comment --comment "default/istio-ingressgateway:https cluster IP" -m tcp --dport 443 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-MC5E2LG7HIQNPQQU -m comment --comment "default/istio-ingressgateway:https -> 10.244.0.166:8443" -c 0 0 -j KUBE-SEP-CBLZMDET24RR44AF
+-A KUBE-SVC-NPX46M4PTMTKRN6Y ! -s 10.244.0.0/16 -d 10.96.0.1/32 -p tcp -m comment --comment "default/kubernetes:https cluster IP" -m tcp --dport 443 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-NPX46M4PTMTKRN6Y -m comment --comment "default/kubernetes:https -> 10.165.56.200:6443" -c 155 9300 -j KUBE-SEP-C5FVQ3S26EWR2L6T
+-A KUBE-SVC-NVNLZVDQSGQUD3NM ! -s 10.244.0.0/16 -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:grpc-xds cluster IP" -m tcp --dport 15010 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-NVNLZVDQSGQUD3NM -m comment --comment "istio-system/istiod:grpc-xds -> 10.244.0.165:15010" -c 0 0 -j KUBE-SEP-T4Z4Y7GYE466CWGJ
+-A KUBE-SVC-SIMN7BSCUVAV2FC7 ! -s 10.244.0.0/16 -d 10.99.124.43/32 -p tcp -m comment --comment "istio-operator/istio-operator:http-metrics cluster IP" -m tcp --dport 8383 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-SIMN7BSCUVAV2FC7 -m comment --comment "istio-operator/istio-operator:http-metrics -> 10.244.0.164:8383" -c 0 0 -j KUBE-SEP-ISFYEX5PJ6IN6PQQ
+-A KUBE-SVC-TCOU7JCQXEZGVUNU ! -s 10.244.0.0/16 -d 10.96.0.10/32 -p udp -m comment --comment "kube-system/kube-dns:dns cluster IP" -m udp --dport 53 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-TCOU7JCQXEZGVUNU -m comment --comment "kube-system/kube-dns:dns -> 10.244.0.52:53" -m statistic --mode random --probability 0.50000000000 -c 2739 258762 -j KUBE-SEP-6XVRDQFXUVS4IFFJ
+-A KUBE-SVC-TCOU7JCQXEZGVUNU -m comment --comment "kube-system/kube-dns:dns -> 10.244.0.53:53" -c 2814 266023 -j KUBE-SEP-P5EUFAUZOGHXAVVR
+-A KUBE-SVC-WHNIZNLB5XFXIX2C ! -s 10.244.0.0/16 -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:https-webhook cluster IP" -m tcp --dport 443 -c 1 60 -j KUBE-MARK-MASQ
+-A KUBE-SVC-WHNIZNLB5XFXIX2C -m comment --comment "istio-system/istiod:https-webhook -> 10.244.0.165:15017" -c 1 60 -j KUBE-SEP-KUFXDQQ7JGPCJVQV
+-A KUBE-SVC-XHUBMW47Y5G3ICIS ! -s 10.244.0.0/16 -d 10.109.169.77/32 -p tcp -m comment --comment "istio-system/istiod:http-monitoring cluster IP" -m tcp --dport 15014 -c 0 0 -j KUBE-MARK-MASQ
+-A KUBE-SVC-XHUBMW47Y5G3ICIS -m comment --comment "istio-system/istiod:http-monitoring -> 10.244.0.165:15014" -c 0 0 -j KUBE-SEP-T6E5F3IGQFXHDZNW

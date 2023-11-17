@@ -23,6 +23,17 @@ envoy_cc_test_binary(
     }),
 )
 
+envoy_cc_test_binary(
+    name = "tls_server",
+    srcs = ["tls_server.cc"],
+    deps = ["//bazel:boringssl",] + select({
+        "//bazel:coverage_build": [],
+        "//bazel:windows_x86_64": envoy_all_extensions(WINDOWS_SKIP_TARGETS),
+        "//bazel:linux_ppc": envoy_all_extensions(PPC_SKIP_TARGETS),
+        "//conditions:default": envoy_all_extensions(),
+    }),
+)
+
 envoy_cc_test_library(
     name = "router_check_main_lib",
     srcs = [
