@@ -5,9 +5,9 @@ cc_library(
     srcs = [
         "crypto/libcrypto.a",
     ],
-    hdrs = glob(["boringssl/include/openssl/*.h"]),
-    defines = ["BORINGSSL_FIPS"],
-    includes = ["boringssl/include"],
+    hdrs = glob(["my_boringssl-32fe277f40bbed3b3ada3a1976f9e8b71157b3f4/include/openssl/*.h"]),
+    defines = ["BORINGSSL_FIPS1"],
+    includes = ["my_boringssl-32fe277f40bbed3b3ada3a1976f9e8b71157b3f4/include"],
     visibility = ["//visibility:public"],
 )
 
@@ -16,15 +16,15 @@ cc_library(
     srcs = [
         "ssl/libssl.a",
     ],
-    hdrs = glob(["boringssl/include/openssl/*.h"]),
-    includes = ["boringssl/include"],
+    hdrs = glob(["my_boringssl-32fe277f40bbed3b3ada3a1976f9e8b71157b3f4/include/openssl/*.h"]),
+    includes = ["my_boringssl-32fe277f40bbed3b3ada3a1976f9e8b71157b3f4/include"],
     visibility = ["//visibility:public"],
     deps = [":crypto"],
 )
 
 genrule(
     name = "build",
-    srcs = glob(["boringssl/**"]),
+    srcs = glob(["my_boringssl-32fe277f40bbed3b3ada3a1976f9e8b71157b3f4/**"]),
     outs = [
         "crypto/libcrypto.a",
         "ssl/libssl.a",
