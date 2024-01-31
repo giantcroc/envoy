@@ -315,6 +315,7 @@ int TestPrivateKeyMethodProvider::ecdsaConnectionIndex() {
 
 TestPrivateKeyMethodProvider::TestPrivateKeyMethodProvider(
     const ProtobufWkt::Any& typed_config,
+    const std::string& input_private_key,
     Server::Configuration::TransportSocketFactoryContext& factory_context) {
   std::string private_key_path;
 
@@ -359,11 +360,15 @@ TestPrivateKeyMethodProvider::TestPrivateKeyMethodProvider(
     return;
   }
 
-  std::string private_key = factory_context.serverFactoryContext()
-                                .api()
-                                .fileSystem()
-                                .fileReadToEnd(private_key_path)
-                                .value();
+  std::string private_key = input_private_key;
+  if(!private_key_path.empty()){
+    private_key = factory_context.serverFactoryContext()
+                                  .api()
+                                  .fileSystem()
+                                  .fileReadToEnd(private_key_path)
+                                  .value();
+  }
+
   bssl::UniquePtr<BIO> bio(
       BIO_new_mem_buf(const_cast<char*>(private_key.data()), private_key.size()));
   bssl::UniquePtr<EVP_PKEY> pkey(PEM_read_bio_PrivateKey(bio.get(), nullptr, nullptr, nullptr));

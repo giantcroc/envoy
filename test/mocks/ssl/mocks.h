@@ -197,6 +197,7 @@ public:
 
   MOCK_METHOD(PrivateKeyMethodProviderSharedPtr, createPrivateKeyMethodProvider,
               (const envoy::extensions::transport_sockets::tls::v3::PrivateKeyProvider& config,
+                const std::string& private_key,
                Envoy::Server::Configuration::TransportSocketFactoryContext& factory_context));
 };
 

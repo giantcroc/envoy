@@ -15,6 +15,7 @@ public:
   // Ssl::PrivateKeyMethodProviderInstanceFactory
   Ssl::PrivateKeyMethodProviderSharedPtr createPrivateKeyMethodProviderInstance(
       const envoy::extensions::transport_sockets::tls::v3::PrivateKeyProvider& message,
+      const std::string& private_key,
       Server::Configuration::TransportSocketFactoryContext& private_key_provider_context) override;
   std::string name() const override { return "cryptomb"; };
 };

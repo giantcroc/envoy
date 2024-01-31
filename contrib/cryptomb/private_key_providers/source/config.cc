@@ -26,6 +26,7 @@ namespace CryptoMb {
 Ssl::PrivateKeyMethodProviderSharedPtr
 CryptoMbPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
     const envoy::extensions::transport_sockets::tls::v3::PrivateKeyProvider& proto_config,
+    const std::string& private_key,
     Server::Configuration::TransportSocketFactoryContext& private_key_provider_context) {
   ProtobufTypes::MessagePtr message =
       std::make_unique<envoy::extensions::private_key_providers::cryptomb::v3alpha::
@@ -44,7 +45,7 @@ CryptoMbPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
 #else
   IppCryptoSharedPtr ipp = std::make_shared<IppCryptoImpl>();
   provider =
-      std::make_shared<CryptoMbPrivateKeyMethodProvider>(conf, private_key_provider_context, ipp);
+      std::make_shared<CryptoMbPrivateKeyMethodProvider>(conf, private_key_provider_context, ipp, private_key);
 #endif
   return provider;
 }

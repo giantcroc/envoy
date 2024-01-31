@@ -643,7 +643,7 @@ void CryptoMbPrivateKeyMethodProvider::unregisterPrivateKeyMethod(SSL* ssl) {
 CryptoMbPrivateKeyMethodProvider::CryptoMbPrivateKeyMethodProvider(
     const envoy::extensions::private_key_providers::cryptomb::v3alpha::
         CryptoMbPrivateKeyMethodConfig& conf,
-    Server::Configuration::TransportSocketFactoryContext& factory_context, IppCryptoSharedPtr ipp)
+    Server::Configuration::TransportSocketFactoryContext& factory_context, IppCryptoSharedPtr ipp, const std::string& input_private_key)
     : api_(factory_context.serverFactoryContext().api()),
       tls_(ThreadLocal::TypedSlot<ThreadLocalData>::makeUnique(
           factory_context.serverFactoryContext().threadLocal())),
@@ -657,7 +657,11 @@ CryptoMbPrivateKeyMethodProvider::CryptoMbPrivateKeyMethodProvider(
   std::chrono::milliseconds poll_delay =
       std::chrono::milliseconds(PROTOBUF_GET_MS_OR_DEFAULT(conf, poll_delay, 200));
 
-  std::string private_key = Config::DataSource::read(conf.private_key(), false, api_);
+  std::string private_key = input_private_key;
+
+  if(conf.has_private_key()){
+    private_key = Config::DataSource::read(conf.private_key(), false, api_);
+  }
 
   bssl::UniquePtr<BIO> bio(
       BIO_new_mem_buf(const_cast<char*>(private_key.data()), private_key.size()));

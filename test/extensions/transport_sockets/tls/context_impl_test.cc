@@ -2014,7 +2014,7 @@ TEST_F(ServerContextConfigImplTest, PrivateKeyMethodLoadFailureNoMethod) {
   EXPECT_CALL(factory_context_, sslContextManager()).WillOnce(ReturnRef(context_manager));
   EXPECT_CALL(context_manager, privateKeyMethodManager())
       .WillOnce(ReturnRef(private_key_method_manager));
-  EXPECT_CALL(private_key_method_manager, createPrivateKeyMethodProvider(_, _))
+  EXPECT_CALL(private_key_method_manager, createPrivateKeyMethodProvider(_, _, _))
       .WillOnce(Return(private_key_method_provider_ptr));
   EXPECT_CALL(*private_key_method_provider_ptr, isAvailable()).WillRepeatedly(Return(true));
   const std::string tls_context_yaml = R"EOF(
@@ -2046,7 +2046,7 @@ TEST_F(ServerContextConfigImplTest, PrivateKeyMethodLoadSuccess) {
   EXPECT_CALL(factory_context_, sslContextManager()).WillOnce(ReturnRef(context_manager));
   EXPECT_CALL(context_manager, privateKeyMethodManager())
       .WillOnce(ReturnRef(private_key_method_manager));
-  EXPECT_CALL(private_key_method_manager, createPrivateKeyMethodProvider(_, _))
+  EXPECT_CALL(private_key_method_manager, createPrivateKeyMethodProvider(_, _, _))
       .WillOnce(Return(private_key_method_provider_ptr));
   EXPECT_CALL(*private_key_method_provider_ptr, isAvailable()).WillRepeatedly(Return(true));
   const std::string tls_context_yaml = R"EOF(
@@ -2074,7 +2074,7 @@ TEST_F(ServerContextConfigImplTest, PrivateKeyMethodFallback) {
   EXPECT_CALL(factory_context_, sslContextManager()).WillOnce(ReturnRef(context_manager));
   EXPECT_CALL(context_manager, privateKeyMethodManager())
       .WillOnce(ReturnRef(private_key_method_manager));
-  EXPECT_CALL(private_key_method_manager, createPrivateKeyMethodProvider(_, _))
+  EXPECT_CALL(private_key_method_manager, createPrivateKeyMethodProvider(_, _, _))
       .WillOnce(Return(private_key_method_provider_ptr));
   EXPECT_CALL(*private_key_method_provider_ptr, isAvailable()).WillRepeatedly(Return(false));
   const std::string tls_context_yaml = R"EOF(

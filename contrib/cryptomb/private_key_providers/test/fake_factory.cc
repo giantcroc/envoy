@@ -151,6 +151,7 @@ FakeCryptoMbPrivateKeyMethodFactory::FakeCryptoMbPrivateKeyMethodFactory(
 Ssl::PrivateKeyMethodProviderSharedPtr
 FakeCryptoMbPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
     const envoy::extensions::transport_sockets::tls::v3::PrivateKeyProvider& proto_config,
+    const std::string& input_private_key,
     Server::Configuration::TransportSocketFactoryContext& private_key_provider_context) {
   ProtobufTypes::MessagePtr message =
       std::make_unique<envoy::extensions::private_key_providers::cryptomb::v3alpha::
@@ -168,8 +169,12 @@ FakeCryptoMbPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
       std::make_shared<FakeIppCryptoImpl>(supported_instruction_set_);
 
   // We need to get more RSA key params in order to be able to use BoringSSL signing functions.
-  std::string private_key = Config::DataSource::read(
+  std::string private_key = input_private_key;
+
+  if(conf.has_private_key()){
+    private_key = Config::DataSource::read(
       conf.private_key(), false, private_key_provider_context.serverFactoryContext().api());
+  }
 
   bssl::UniquePtr<BIO> bio(
       BIO_new_mem_buf(const_cast<char*>(private_key.data()), private_key.size()));
@@ -183,7 +188,7 @@ FakeCryptoMbPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
   IppCryptoSharedPtr ipp = std::dynamic_pointer_cast<IppCrypto>(fakeIpp);
 
   return std::make_shared<CryptoMbPrivateKeyMethodProvider>(conf, private_key_provider_context,
-                                                            ipp);
+                                                            ipp,input_private_key);
 }
 
 } // namespace CryptoMb

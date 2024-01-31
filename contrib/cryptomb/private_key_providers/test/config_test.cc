@@ -42,15 +42,15 @@ public:
         .WillByDefault(ReturnRef(private_key_method_manager_));
   }
 
-  Ssl::PrivateKeyMethodProviderSharedPtr createWithConfig(std::string yaml,
-                                                          bool supported_instruction_set = true) {
+  Ssl::PrivateKeyMethodProviderSharedPtr createWithConfig(std::string yaml, 
+                                                          bool supported_instruction_set = true,std::string private_key = "") {
     FakeCryptoMbPrivateKeyMethodFactory cryptomb_factory(supported_instruction_set);
     Registry::InjectFactory<Ssl::PrivateKeyMethodProviderInstanceFactory>
         cryptomb_private_key_method_factory(cryptomb_factory);
 
     return factory_context_.sslContextManager()
         .privateKeyMethodManager()
-        .createPrivateKeyMethodProvider(parsePrivateKeyProviderFromV3Yaml(yaml), factory_context_);
+        .createPrivateKeyMethodProvider(parsePrivateKeyProviderFromV3Yaml(yaml), private_key, factory_context_);
   }
 
   Event::SimulatedTimeSystem time_system_;
@@ -197,6 +197,27 @@ TEST_F(CryptoMbConfigTest, CreateEcdsaP256Inline) {
   EXPECT_NE(nullptr, createWithConfig(yaml));
 }
 
+TEST_F(CryptoMbConfigTest, CreateInputEcdsaP256) {
+  const std::string yaml = R"EOF(
+      provider_name: cryptomb
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.private_key_providers.cryptomb.v3alpha.CryptoMbPrivateKeyMethodConfig
+        poll_delay: 0.02s
+)EOF";
+
+const std::string private_key = R"EOF(
+-----BEGIN PRIVATE KEY-----
+MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgIxp5QZ3YFaT8s+CR
+rqUqeYSe5D9APgBZbyCvAkO2/JChRANCAARM53DFLHORcSyBpu5zpaG7/HfLXT8H
+r1RaoGEiH9pi3MIKg1H+b8EaM1M4wURT2yXMjuvogQ6ixs0B1mvRkZnL
+-----END PRIVATE KEY-----
+)EOF";
+
+  Ssl::PrivateKeyMethodProviderSharedPtr provider = createWithConfig(yaml,true,private_key);
+  EXPECT_NE(nullptr, provider);
+  EXPECT_EQ(provider->isAvailable(), true);
+}
+
 TEST_F(CryptoMbConfigTest, CreateEcdsaP384) {
   const std::string yaml = R"EOF(
       provider_name: cryptomb
@@ -230,8 +251,7 @@ TEST_F(CryptoMbConfigTest, CreateMissingKey) {
         poll_delay: 0.02s
         )EOF";
 
-  EXPECT_THROW_WITH_MESSAGE(createWithConfig(yaml), EnvoyException,
-                            "Unexpected DataSource::specifier_case(): 0");
+  EXPECT_THROW(createWithConfig(yaml), EnvoyException);
 }
 
 TEST_F(CryptoMbConfigTest, CreateMissingPollDelay) {
