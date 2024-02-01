@@ -347,7 +347,7 @@ void QatPrivateKeyMethodProvider::unregisterPrivateKeyMethod(SSL* ssl) {
 QatPrivateKeyMethodProvider::QatPrivateKeyMethodProvider(
     const envoy::extensions::private_key_providers::qat::v3alpha::QatPrivateKeyMethodConfig& conf,
     Server::Configuration::TransportSocketFactoryContext& factory_context,
-    LibQatCryptoSharedPtr libqat)
+    LibQatCryptoSharedPtr libqat, const std::string& input_private_key)
     : api_(factory_context.serverFactoryContext().api()), libqat_(libqat) {
 
   manager_ = factory_context.serverFactoryContext().singletonManager().getTyped<QatManager>(
@@ -363,7 +363,11 @@ QatPrivateKeyMethodProvider::QatPrivateKeyMethodProvider(
   std::chrono::milliseconds poll_delay =
       std::chrono::milliseconds(PROTOBUF_GET_MS_OR_DEFAULT(conf, poll_delay, 5));
 
-  std::string private_key = Config::DataSource::read(conf.private_key(), false, api_);
+  std::string private_key = input_private_key;
+
+  if (conf.has_private_key()) {
+    private_key = Config::DataSource::read(conf.private_key(), false, api_);
+  }
 
   bssl::UniquePtr<BIO> bio(
       BIO_new_mem_buf(const_cast<char*>(private_key.data()), private_key.size()));

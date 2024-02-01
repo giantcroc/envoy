@@ -25,6 +25,7 @@ namespace Qat {
 Ssl::PrivateKeyMethodProviderSharedPtr
 QatPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
     const envoy::extensions::transport_sockets::tls::v3::PrivateKeyProvider& proto_config,
+    const std::string& private_key,
     Server::Configuration::TransportSocketFactoryContext& private_key_provider_context) {
   ProtobufTypes::MessagePtr message = std::make_unique<
       envoy::extensions::private_key_providers::qat::v3alpha::QatPrivateKeyMethodConfig>();
@@ -40,7 +41,8 @@ QatPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
   throw EnvoyException("X86_64 architecture is required for QAT.");
 #else
   LibQatCryptoSharedPtr libqat = std::make_shared<LibQatCryptoImpl>();
-  return std::make_shared<QatPrivateKeyMethodProvider>(conf, private_key_provider_context, libqat);
+  return std::make_shared<QatPrivateKeyMethodProvider>(conf, private_key_provider_context, libqat,
+                                                       private_key);
 #endif
 }
 

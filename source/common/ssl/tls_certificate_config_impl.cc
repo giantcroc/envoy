@@ -61,10 +61,10 @@ TlsCertificateConfigImpl::TlsCertificateConfigImpl(
     }
   } else {
     if (config.has_private_key_provider()) {
-      private_key_method_ =
-          factory_context.sslContextManager()
-              .privateKeyMethodManager()
-              .createPrivateKeyMethodProvider(config.private_key_provider(), private_key_, factory_context);
+      private_key_method_ = factory_context.sslContextManager()
+                                .privateKeyMethodManager()
+                                .createPrivateKeyMethodProvider(config.private_key_provider(),
+                                                                private_key_, factory_context);
       if (private_key_method_ == nullptr ||
           (!private_key_method_->isAvailable() && !config.private_key_provider().fallback())) {
         throwEnvoyExceptionOrPanic(fmt::format("Failed to load private key provider: {}",

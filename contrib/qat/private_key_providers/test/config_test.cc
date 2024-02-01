@@ -56,14 +56,16 @@ public:
     ON_CALL(factory_context_.server_context_, singletonManager()).WillByDefault(ReturnRef(fsm_));
   }
 
-  Ssl::PrivateKeyMethodProviderSharedPtr createWithConfig(std::string yaml) {
+  Ssl::PrivateKeyMethodProviderSharedPtr createWithConfig(std::string yaml,
+                                                          std::string private_key = "") {
     FakeQatPrivateKeyMethodFactory qat_factory;
     Registry::InjectFactory<Ssl::PrivateKeyMethodProviderInstanceFactory>
         qat_private_key_method_factory(qat_factory);
 
     return factory_context_.sslContextManager()
         .privateKeyMethodManager()
-        .createPrivateKeyMethodProvider(parsePrivateKeyProviderFromV3Yaml(yaml), factory_context_);
+        .createPrivateKeyMethodProvider(parsePrivateKeyProviderFromV3Yaml(yaml), private_key,
+                                        factory_context_);
   }
 
   Event::SimulatedTimeSystem time_system_;
@@ -91,6 +93,37 @@ TEST_F(QatConfigTest, CreateRsa1024) {
   EXPECT_EQ(provider->isAvailable(), true);
   Ssl::BoringSslPrivateKeyMethodSharedPtr method = provider->getBoringSslPrivateKeyMethod();
   EXPECT_NE(nullptr, method);
+}
+
+TEST_F(QatConfigTest, CreateInputRsa1024) {
+  const std::string yaml = R"EOF(
+      provider_name: qat
+      typed_config:
+        "@type": type.googleapis.com/envoy.extensions.private_key_providers.qat.v3alpha.QatPrivateKeyMethodConfig
+        poll_delay: 0.02s
+)EOF";
+
+  const std::string private_key = R"EOF(
+-----BEGIN RSA PRIVATE KEY-----
+MIICXQIBAAKBgQCahx0RdJwYtXtBNI98b+xN28HmcEzRMcByJZ6FHpDnTOXmUKpF
+olHYlypZ5lLSHIuPJAcUk33iXpOqJQLBv8wUR0EPUXAnsZosbhJtAlxV4BIVj0QY
+3RiLaZ1QGzXS4rNiLFwJDPwVnG9tKZlRpmCmYrLb5lhBEfiG8Ug7rjKVUQIDAQAB
+AoGAbTbXXZHsDS6e6UvrqYg1HCYYWfS+5g9is4pRCka7JS7dQbV7UnHRpOHaBeXa
+XTPdkxJkiq9fhlFPzi4QT71tz0IQ20b+MtgqkJkMDkLhUYYN17fMtNvtTQnVmxNk
+a5k9HcAkp00qPF8d8i4/quRTulRHnNbip8wpeaqRWbsrGxECQQDIng+8oXf2B51i
+hYRnyLQysSRoqpFE9C2XDCrA7+e4G8UvdFPS9R9XBoOgFZvf/kjMCJxc68/15XfX
+yvlHc/PNAkEAxS/Tv5PMYGYOvCiYBxPPFvOIb025iCKjA04YHDbm8LBHoRLXw+R6
+DWYH9iyKB5ZJfiMTjn0wp/VharTzwwtrlQJBAI4EputH+x4mAdpO3o6B3F7OXBHk
+PXZszSFSsalnq8f/kLWpSfXbJNZ8fA2FfpUw8+PMbLSzEsLmMNKIk7NreDkCQQDB
+EuV4zhTtxsBiyDSjqWe6h1Zt9WLWw2NuFwdQiQlzXoekVbji3FIN0Hu3NUEp0KPB
+WEML39TGgGOUgf20WvhJAkBQ4jNgi2d8y/2vlh4B3wKsI1hJvZPjkqh66KH7OyF4
+Wa8lQ1gBgajTYocZkmIcf2dkrNArmMl2ozWJrFY9vSDs
+-----END RSA PRIVATE KEY-----
+)EOF";
+
+  Ssl::PrivateKeyMethodProviderSharedPtr provider = createWithConfig(yaml, private_key);
+  EXPECT_NE(nullptr, provider);
+  EXPECT_EQ(provider->isAvailable(), true);
 }
 
 TEST_F(QatConfigTest, CreateRsa2048) {
@@ -169,8 +202,7 @@ TEST_F(QatConfigTest, CreateMissingKey) {
         poll_delay: 0.02s
         )EOF";
 
-  EXPECT_THROW_WITH_MESSAGE(createWithConfig(yaml), EnvoyException,
-                            "Unexpected DataSource::specifier_case(): 0");
+  EXPECT_THROW(createWithConfig(yaml), EnvoyException);
 }
 
 TEST_F(QatConfigTest, CreateMissingPollDelay) {

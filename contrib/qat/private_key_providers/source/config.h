@@ -17,6 +17,7 @@ class QatPrivateKeyMethodFactory : public Ssl::PrivateKeyMethodProviderInstanceF
   // Ssl::PrivateKeyMethodProviderInstanceFactory
   Ssl::PrivateKeyMethodProviderSharedPtr createPrivateKeyMethodProviderInstance(
       const envoy::extensions::transport_sockets::tls::v3::PrivateKeyProvider& message,
+      const std::string& private_key,
       Server::Configuration::TransportSocketFactoryContext& private_key_provider_context) override;
 
 public:

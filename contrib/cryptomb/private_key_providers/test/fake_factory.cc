@@ -171,9 +171,9 @@ FakeCryptoMbPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
   // We need to get more RSA key params in order to be able to use BoringSSL signing functions.
   std::string private_key = input_private_key;
 
-  if(conf.has_private_key()){
+  if (conf.has_private_key()) {
     private_key = Config::DataSource::read(
-      conf.private_key(), false, private_key_provider_context.serverFactoryContext().api());
+        conf.private_key(), false, private_key_provider_context.serverFactoryContext().api());
   }
 
   bssl::UniquePtr<BIO> bio(
@@ -187,8 +187,8 @@ FakeCryptoMbPrivateKeyMethodFactory::createPrivateKeyMethodProviderInstance(
 
   IppCryptoSharedPtr ipp = std::dynamic_pointer_cast<IppCrypto>(fakeIpp);
 
-  return std::make_shared<CryptoMbPrivateKeyMethodProvider>(conf, private_key_provider_context,
-                                                            ipp,input_private_key);
+  return std::make_shared<CryptoMbPrivateKeyMethodProvider>(conf, private_key_provider_context, ipp,
+                                                            input_private_key);
 }
 
 } // namespace CryptoMb
